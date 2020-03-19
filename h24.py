@@ -1,1 +1,0 @@
-/home/tony/.config/spyder-py3/h24.py
