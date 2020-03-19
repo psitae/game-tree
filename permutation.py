@@ -1,0 +1,1 @@
+/home/tony/.config/spyder-py3/permutation.py
