@@ -10,6 +10,9 @@ from matplotlib.pyplot import *
 import itertools
 
 def k_add(a,b): # expects two square matrices 
+    # I can't believe I had to program this. It is a standard direct sum operation.
+    # it will create a block diagonal matrix with the two inputs
+    
     tr = zeros([a.shape[0],b.shape[1]])
     bl = tr.transpose()
     top = concatenate([a, tr], axis=1)
@@ -18,6 +21,7 @@ def k_add(a,b): # expects two square matrices
     return both
 
 def many_ksum(x): # expecting a list of matrices
+    # calls k_add multiple times
     current = k_add(x[0],x[1])
 
     for i in range(len(x)-2):
@@ -25,9 +29,11 @@ def many_ksum(x): # expecting a list of matrices
     return current
 
 def many_kron(x): # expecting a list of matrices
-    current = kron(x[0],x[1])
+    # the input list will all be tensor producted together in order
+    
+    current = kron(x[0], x[1])
     for i in range(len(x)-2):
-        current = kron(current,x[i+2])
+        current = kron(current, x[i+2])
     return current
         
 def create_swap(dim, a=0, b=1): # swaps ath and bth element in a (dim x dim) matrix
@@ -49,6 +55,8 @@ def jumble(mat, a, b): # expecting a square matrix
     
     # to improve: the matrix will always have a clean tensor product in normal use.
     # just take one from the u-l of each block, and put that matrix as the tensor of the identity: identity (x) stuff
+    
+    # also to improve: jumble groups of qudits together
     
     # make dictionary
     # index = list(range(a*b))
@@ -86,6 +94,9 @@ def jumble(mat, a, b): # expecting a square matrix
     return mat
 
 def copy(x): # expecting qubit dimension
+    # this operator will copy one basis vector to another
+    # ONLY IF the second one starts out at |0>
+    
     result = identity(x**2)
     for i in range(1,x):
         result[ i*x, i*x ] = 0
@@ -95,11 +106,9 @@ def copy(x): # expecting qubit dimension
         
     return result
           
-def create_control(quantum_circuit, control, target):
-    #        control: expecting a list of control qubits
-    #           each element of the list [ index, control_state ]
-    #                 
-    #        target:  only one qubit for now [index, ]
+def integrate(quantum_circuit, control, target):
+    # this doesn't work right now
+    # eventually, it might be combined with single()
     
 
     if control.index < target.index: # forwards control
@@ -142,23 +151,27 @@ def create_control(quantum_circuit, control, target):
         return final
                  
 class quantum_circuit(): # expecting a list of dimensions
+    # object containing a list of all the dimensions of the qudits, primarily
     def __init__(self, qubits):
         self.size = prod(qubits)
         self.dim = qubits
         
 class control():
+    # is this even still used? I don't think its very useful
     def __init__(self, qc, i, state):
         self.index = i
         self.control_state = state
         self.size = qc.dim[i]
         
 class target():
+    # same as control object
     def __init__(self, qc, i, gate):
         self.index = i # (i+1)th qubit down
         self.gate = gate # control action
         self.size = qc.dim[i]
 
 def D(i):
+    # these operators diffuse from the |0> state evenly to all the other states
     if i == 2:
         return array([[0,0, 1],
            [sqrt(1/2), sqrt(1/2), 0],
@@ -178,31 +191,42 @@ def D(i):
             [.5,-.5,-.5,.5,0]])
     
 def single(circuit, i, gate): # how can i accept one OR two inputs for index
+    # integrates single-qudit operations into the whole circuit,
+    # which amounts to much tensor producting with identity matrices
+    
     before = int(prod(circuit.dim[0:i]))
     after = int(prod(circuit.dim[i+1:]))
 
     result = many_kron([identity(before), gate, identity(after)])
     return result
 
-def recursive_enumeration(digits, encoding = [], attention = 1):
+def recursive_enumeration(digits, encoding = [], attention = 1, first = True):
+    # this function figures out how to increment all the digits together,
+    # it is the main workhorse of encode_state()
     
-    # digit is maxed out?
-    if digits[-attention].val + 1 == digits[-attention].d:
-        digits[-attention].val = 0
-        attention += 1
-        if attention > len(digits):
-            return encoding
-        return recursive_enumeration(digits, encoding, attention)
-    else:
+    if first == True:
         string = ''
         for i in digits:
             string += str(i.val)
         encoding.append(string)
+        
+    # can you add 1 to the digit?
+    if digits[-attention].val + 1 == digits[-attention].d:      # no
+        digits[-attention].val = 0
+        attention += 1
+        if attention > len(digits):
+            return encoding
+        return recursive_enumeration(digits, encoding, attention, first = False)
+    else:                                                   # yes
         digits[-attention].increment()
+        string = ''
+        for i in digits:
+            string += str(i.val)
+        encoding.append(string)
         attention = 1
-        return recursive_enumeration(digits, encoding, attention)
+        return recursive_enumeration(digits, encoding, attention, first = False)
      
-class digit():
+class digit(): # used to encode states
     def __init__(self, d, val):
         self.d = d
         self.val = val
@@ -214,21 +238,29 @@ class digit():
             self.val += 1
             return
       
-def encode_state(circuit):
+def encode_state(circuit, Print=False):
+    # produces a dictionary that counts 00001, 00010, etc
+    # circuit is a list, not an object
+    
     digit_order = []
-    for i in circuit.dim:
+    for i in circuit:
         digit_order.append(digit(i, 0))
         
     encoding = recursive_enumeration(digit_order)
     
+    if Print == True:
+        print(encoding)
     return encoding
 
-class display_object():
+class display_object(): # used to print out states with amplitude
     def __init__(self, amp, code):
         self.amp = amp
         self.code = code
         
 def output_state(circuit, state, amplitude='no'):
+    # this function prints out states formatted as xxx|yyy> + ...
+    # xxx is the amplitude, yyy is the basis vector
+    
     encoding = encode_state(circuit)
     objs = []
     
@@ -236,15 +268,12 @@ def output_state(circuit, state, amplitude='no'):
         for i in range(circuit.size):
             if state[i] != 0:             # amp      state
                 objs.append( display_object('', encoding[i]) )
-    
     else:
         for i in range(circuit.size):
             if state[i] != 0:                     # amp                 state
                 objs.append( display_object(str(state[i].round(3)), encoding[i]) )
         
     strings = []
-    
-    
     for i in objs:
         strings.append( i.amp + '|' + i.code  +'> ' )
 
@@ -256,6 +285,8 @@ def output_state(circuit, state, amplitude='no'):
     print(state_string)
     
 def diffuse(dim, swaps): # swaps is a list of the diffusees
+    # this function produces a limited diffusion to certain states using the D() function
+    
     d = D(len(swaps))
     print(d)
     # print('Entering Diffuse...')
@@ -276,12 +307,14 @@ def diffuse(dim, swaps): # swaps is a list of the diffusees
     
     return result
     
-def move_2(qc):
+def ttt_move(move, immute): # move - which move is it
+    #  this function productes an operator to act on states with (move - 1), 
+    #  bring it to (move)
     
     m2 = []
-    a = (1, 2, 3, 4)
+    unchange = (1, 2, 3, 4)
     for i in a:
-        diffuse_target = list(a)
+        diffuse_target = list(unchange)
         diffuse_target.remove(i)
         c = control(qc, 0, i)
         t = target(qc, 1, diffuse(5, diffuse_target))
@@ -310,59 +343,49 @@ def create_list():
             
     return creation
             
-def double_control(circuit, control, target, instruct):
-    #        control: expecting a list of control qubits
-    #           each element of the list [ index, control_state ]
-    #                 
-    #        target:  only one qubit for now [index, ]
+def create_control(size, target_size, instruct, control_encoding, Print=False):
+    #        size : product of all control dimensions
+    #        target_size : dimension of target action. Should correspond to operations in instruct
+    #        instruct : dictionary that pairs control states and prescribed operations to the target
+    #        control_encoding : similar to entire state encoding, except it's just for the control states
+    #
+    #     future: consider cases where control qubits are below targets
     
-    size = control[0] * control[1]
-
     trivial_partitions = [identity(target.size)] * size
-    
-    # print('List length: ' + str(len(trivial_partitions)))
-    # print('Entries:')
-    # print(trivial_partitions[0])
-    
     partitions = trivial_partitions
-    encoding = encode_state(circuit)
 
     for i in instruct:
-        operation = instruct[i]
-        placement = encoding.index(i)
+        operation = instruct[i] # dict[key] = val
+        placement = control_encoding.index(i)
         partitions[placement] = operation
         
 
-    # print(partitions)
+    final = many_ksum(partitions)
     
-    # combine partitions with direct sum
+    if Print == True:
+        matshow(final)
     
-    semifinal = many_ksum(partitions)
-    
-    final = semifinal #many_kron([front, semifinal, end])
-
     return final
     
 if __name__ == "__main__":
     qc = quantum_circuit([5,5,5,5])
     
-    # encoding = encode_state(qc)
-    # print(encoding)
-    
-    state = []
-    state.append( zeros(qc.size)  )
-    state[0][0] = 1
+    control_encoding = encode_state([5,5], Print=True)
+    create_control(25, t, create_list(), control_encoding, Print=True)
+    # state = []
+    # state.append( zeros(qc.size)  )
+    # state[0][0] = 1
 
-    print('Move 0')
-    output_state(qc, state[-1])
-    move_one = single(qc, 0, D(4) )
+    # print('Move 0')
+    # output_state(qc, state[-1])
+    # move_one = single(qc, 0, D(4) )
     
-    print('Move 1')    
-    state.append(move_one @ state[-1] )
-    output_state(qc, state[-1])
+    # print('Move 1')    
+    # state.append(move_one @ state[-1] )
+    # output_state(qc, state[-1])
     
-    print('Move 2')
-    output_state(qc, move_2(qc) @ state[1] )
+    # print('Move 2')
+    # output_state(qc, move_2(qc) @ state[1] )
      
     
     # double_control(qc, [5, 5], target(qc, 2, ''), m3_pairs)
