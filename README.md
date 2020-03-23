@@ -5,5 +5,7 @@ Required packages (recommended to install with pip)
 
 
 numpy
+
 itertools_more
+
 matplotlib
