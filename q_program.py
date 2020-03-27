@@ -28,3 +28,36 @@ def nim_move(circuit):
     board_c_hist = create_control(circuit, 1, 0, instruct)
     
     return board_c_hist
+
+class display_object(): # used to print out states with amplitude
+    def __init__(self, amp, code):
+        self.amp = amp
+        self.code = code
+        
+def output_state(circuit, state, amplitude='no'):
+    # this function prints out states formatted as xxx|yyy> + ...
+    # xxx is the amplitude, yyy is the basis vector
+    
+    encoding = encode_state(circuit)
+    objs = []
+    size = prod(circuit)
+    
+    if amplitude is 'no':
+        for i in range(size):
+            if state[i] != 0:             # amp      state
+                objs.append( display_object('', encoding[i]) )
+    else:
+        for i in range(size):
+            if state[i] != 0:                     # amp                 state
+                objs.append( display_object(str(state[i].round(3)), encoding[i]) )
+        
+    strings = []
+    for i in objs:
+        strings.append( i.amp + '|' + i.code  +'> ' )
+
+    state_string = strings[0]
+    
+    for i in range(1,len(strings)):
+        state_string += '+ ' + strings[i]
+        
+    print(state_string)

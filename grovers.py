@@ -10,7 +10,7 @@ Created on Wed Mar 25 19:25:28 2020
 from numpy import *
 from matplotlib.pyplot import *
 
-# NOTE: only round things before they are string-ified
+# NOTE: only round() things before they are string-ified
 
 # preprocessing
 n = 60
@@ -56,17 +56,13 @@ flip_ =  nans.dot(disp_f[0]) + ans.dot(disp_f[1])
 # print('flip', flip_)
 flip_op = 2 * outer(flip_, flip_) - identity(n)
 
+# compare to normal grovers
 s_flip = 2 * outer(s, s) - identity(n)
 entries = ones(n)
 entries[0] = -1
 not_flip = diag(entries)
 
-# print('s flip\n', s_flip)
-# print('not flip\n', not_flip)
-# print('grover 4\n', s_flip @ not_flip)
-# print('best flip\n', flip_op)
-# print('g4 @ s\n', s_flip @ not_flip @ s)
-# print('best flip @ s\n', (flip_op @ s))
+
 # flip |s> to |ans>
 
 diffused = flip_op @ s
