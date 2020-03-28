@@ -66,14 +66,6 @@ def many_kron(x): # expecting a list of matrices
         current = kron(current, x[i+2])
     return current
         
-def state_swap(dim, a=0, b=1): # swaps ath and bth element in a (dim x dim) matrix
-    # currently unused
-    mat = diag(ones(dim))
-    mat[b,b] = 0 
-    mat[a,a] = 0
-    mat[b,a] = 1
-    mat[a,b] = 1
-    return mat
     
 def is_unitary(mat):
     size = mat.shape[0]
@@ -361,7 +353,7 @@ def integrate(circuit, control, target, small_op, Print=False):
     # integrate() creates the uber matrix for the quantum circuit
     # 
     # assume all controls before all targets
-    print('Integrating...')
+    print('\nIntegrating...')
 
     # front and end
     front_iterable = range(0, control[0])
@@ -372,10 +364,10 @@ def integrate(circuit, control, target, small_op, Print=False):
     end_slice = slice(target[-1]+1, -1)
     end_size = prod(circuit[target[-1]+1:])
     end = identity(int(end_size))
-    print('Front size', front_size)
-    print('Front\n', front)
-    print('End size', end_size)
-    print('End\n', end) 
+    # print('Front size', front_size)
+    # print('Front\n', front)
+    # print('End size', end_size)
+    # print('End\n', end) 
     
     # distinguish meaningful from redundant instructions
     # within the target range
@@ -389,7 +381,7 @@ def integrate(circuit, control, target, small_op, Print=False):
     # what's left should only be middle nonactors
     
     # check to see if integration is necessary
-    if len(nonactors) == 0 and front_size -1 == 0 and end_size -1 == 0:
+    if len(nonactors) == 0 and front_size-1 == 0 and end_size-1 == 0:
         print('No integration necessary.')
         return small_op
     # else:
@@ -445,22 +437,33 @@ def backwards_control_workaround(circuit, control, target, instruct, Print, titl
     # role_call(circuit, control, target)
     
     # find proper permutation, as create_control() expects the targets at the end
-    len_circ = range(len(circuit))
-    original_order = list(len_circ)
-    sect = tuple( original_order[target[0]:control[-1]+1] )
+    index_ = list(range(len(circuit))) 
+    front = index_[:target[0]]
+    middle = index_[target[0]:control[-1]+1]
+    end = index_[control[-1]+1:]
     
-    reorder = empty_like(sect)
-    tl = len(target)
-    rest = len( sect[tl:] )
-    reorder[ :rest ] = sect[ -rest: ]
-    reorder[ -tl: ] = sect[ :tl ]
+    print('front\t', front)
+    print('middle\t', middle)
+    print('end \t', end)
     
+
+    # keep the order of the targets, and put them at the end
+    # of the new order
+    shifted_target = []
+    [ shifted_target.insert(0,t) for t in reversed(target) ]
+    
+    not_target = list(middle)
+    [ not_target.remove(t) for t in target ]
+    print('target(s)\t', target)
+    print('not targets\t', not_target)    
+    
+    reorder = front + not_target + shifted_target + end
+    print('reorder \t', reorder)    
+
     # perm is a permutation using standard group theoretic notation
-    # perm = empty_like(sect)
-    perm = [ list(reorder).index(i) for i in range(len(sect)) ]
-    print('sect \t', array(sect))
-    print('reorder \t', reorder)
-    print('perm \t', array(perm))
+    # perm = empty_like(middle)    
+    perm = [ reorder.index(i) for i in range(len(reorder)) ]  
+    print('perm \t', perm)
 
     swap_op, new_circuit, new_c, new_t = swap(perm, circuit, control, target)
 
@@ -468,14 +471,16 @@ def backwards_control_workaround(circuit, control, target, instruct, Print, titl
         print('Error: swap did not create a good create_control() call')
         return
     
-    print('Creating control from workaround()')
+    print('\nCreating control from workaround()')
     need_swap = create_control(new_circuit, new_c, new_t, instruct, Print)
     
-    print('need_swap shape\t', need_swap.shape)
-    print('swap op shape\t', swap_op.shape)
-    print('proper size:\t', prod(circuit))
+    # print('need_swap shape\t', need_swap.shape)
+    # print('swap op shape\t', swap_op.shape)
+    # print('proper size:\t', prod(circuit))
     # faulty need_swap count .
     # faulty swap_op   count 
+    print('\nSwapping this control back to')
+    role_call(circuit, control, target)
     
     swapped = swap_op.transpose() @ need_swap @ swap_op 
     # operators need modification from both sides
@@ -499,12 +504,17 @@ def create_control(circuit, control, target, instruct,
     # instruct : dictionary that pairs control states and prescribed operations to the target
     # this is defined programmatically 
     
+    
     # user friendly feature: if control and target are solo, put them into a list
     if type(control) == int:       
         control = [ control ]
     if type(target) == int:
         target = [ target ]
 
+    #
+    control.sort()
+    target.sort()
+    
     # calculate some stuff
     control_dims = [ circuit[i] for i in control ]
     control_size = prod(control_dims)
@@ -566,6 +576,8 @@ def swap(perm, circuit, control, target):
     in_order = array(immute)
     in_order.sort()
     
+    print('control\t', control)
+    print('target\t', target)
     # rearrange control, target, circuit
     # full_perm = list(range(0,perm[-1])) + list(perm)
     new_control = []
@@ -593,7 +605,7 @@ def swap(perm, circuit, control, target):
         # print('flipped\t', flipped)
         flip.append(flipped) 
 
-    swap_op = truth_table_matrix(orig_encoding, new_encoding, flip, Print=True)
+    swap_op = truth_table_matrix(orig_encoding, new_encoding, flip, Print=False)
     # print('orig\n', orig_encoding)
     # print('new\n', new_encoding)
     
@@ -616,17 +628,22 @@ if __name__ == "__main__":
     # state = init_state(nim)
     # output_state(nim, state)
           
-    qc = [2, 2, 2, 2]
-    control = array([1]) + 2
-    qc[control[0]] = 3
-    target = array([0, 1])
-    front = 0
+    qc = [2, 2, 2, 2, 3, 2, 2]
+    control = array([2,3]) + 2
+    target = array([ 1, 0, 2 ]) 
+
+    front = 1
+    [ qc.insert(i, 2) for i in range(front) ]
     control, target = control + front, target + front
+    
+    control = list(control)   
+    target = list(target)    
     
     print('----------------')
     role_call(qc, control, target)
     print('----------------')
     
-    instruct = {'2': diffuse(4, [1,2,3])} # qudit_swap([2,2], 0, 1)} 
-    mat = create_control(qc, control, target, instruct, title_='this was produced with the test algorithm', Print=True)
+    instruct = {'00': diffuse(8, [1,2,3])} # qudit_swap([2,2], 0, 1)} 
+    mat = create_control(qc, control, target, instruct, 
+                         Print=False, title_='this was produced with the test algorithm' )
     
