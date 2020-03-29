@@ -1,56 +1,6 @@
+# Ignore virtualenv directory
+/venvdir
 
-Skip to content
-Pull requests
-Issues
-Marketplace
-Explore
-@abf149
-Learn Git and GitHub without any code!
-
-Using the Hello World guide, you’ll start a branch, write comments, and open a pull request.
-github /
-gitignore
-
-3k
-97k
-
-    51.5k
-
-Code
-Pull requests 117
-Actions
-Projects 0
-Security
-Insights
-gitignore/Python.gitignore
-@meysam81 meysam81 [Python] adding IDE & static related stuff (#3317) e931ef7 16 days ago
-@arcresu
-@shiftkey
-@Lucretiel
-@Harrison-G
-@jwg4
-@GabrielC101
-@misaelnieto
-@pmsosa
-@svkampen
-@vltr
-@thedrow
-@matheussl
-@hugovk
-@ghisvail
-@EvandroLG
-@DSIW
-@amigcamel
-@toanant
-@2Cubed
-@brettcannon
-@weinihou
-@Visgean
-@nvie
-@skuschel
-@sigo
-@sethmlarson
-143 lines (116 sloc) 2.09 KB
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -194,19 +144,3 @@ cython_debug/
 # static files generated from Django application using `collectstatic`
 media
 static
-
-    © 2020 GitHub, Inc.
-    Terms
-    Privacy
-    Security
-    Status
-    Help
-
-    Contact GitHub
-    Pricing
-    API
-    Training
-    Blog
-    About
-
-
