@@ -9,7 +9,7 @@ I suspect that the complexity of the algorithm is linear in the depth of the gam
 
 ## Background
 
-* The **circuit description** is a vector representing the quantum logic units in the quantum computer. Depending on the machine architecture, each unit may represet a qubit, qutrit, qu***d***it for ***d*** = dimensionality. A vector of ```[2,2,3]``` represents two qubits and one qutrit.
+* The **circuit description** is a vector representing the quantum logic units in the quantum computer. Depending on the machine architecture, each unit may be a qubit, qutrit, or qudit with d representing dimensionality. E.g.: A vector of ```[2,2,3]``` represents two qubits and one qutrit.
 
 ## System Requirements
 
