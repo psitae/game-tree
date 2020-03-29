@@ -1,11 +1,13 @@
-# game-tree
-Quantum algorithm to solve game trees
+# game-tree: A quantum algorithm to solve game trees
 
-Required packages (recommended to install with pip)
+This can be applied to familiar games like chess.
 
+## System Requirements
 
-numpy
-
-itertools_more
-
-matplotlib
+## Dependencies
+* **Recommended**: virtualenv
+* python3.7
+    * ```sudo apt install virtualenv```
+* numpy
+* itertools_more
+* matplotlib
