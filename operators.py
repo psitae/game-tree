@@ -5,7 +5,7 @@ Created on Wed Mar 11 00:19:25 2020
 @author: T Dean
 """
 
-import sys
+import sys, timeit
 from numpy import *
 from matplotlib.pyplot import *
 from math import log
@@ -257,102 +257,13 @@ def fancy_print(mat, encoding, encoding2=None, title_='Stock title'):
     yticks(range(dim), encoding2) # output
     title(title_, pad = 30)
     
-class digit(): # used to encode states
-    def __init__(self, d, val):
-        self.d = d
-        self.val = val
-
-    def increment(self):
-        if self.val + 1 == self.d:
-            return 0
-        else:
-            self.val += 1
-            return
-
-def recursive_enumeration(digits, encoding = [], attention = 1, depth=0, first=True ):
-    # this function figures out how to increment all the digits together,
-    # it is the main workhorse of encode_state()
-    depth += 1
-
-    # debugging
-    # if first != True:
-    #     print('Recursion occured')
-    # # if attention == 7: return
-    # for i, d in enumerate(digits):
-    #     print('Digit ', i, ' currently at ', d.val)
-    
-    if first == True:
-        string = ''
-        for i in digits:
-            string += str(i.val)
-        encoding.append(string)
-        
-    # can you add 1 to the digit?
-    if digits[-attention].val + 1 == digits[-attention].d:      # no
-        # print('Reset digit ', len(digits) - attention)
-        digits[-attention].val = 0
-        attention += 1
-        if attention > len(digits):
-            return encoding
-        return recursive_enumeration(digits, encoding, attention, depth, first = False )
-    else:                                                   # yes
-        digits[-attention].increment()
-        string = ''
-        for i in digits:
-            string += str(i.val)
-        encoding.append(string)
-        attention = 1
-        return recursive_enumeration(digits, encoding, attention, depth, first = False )
-
-class recursion_limit:
-    def __init__(self, limit):
-        self.limit = limit
-        self.old_limit = sys.getrecursionlimit()
-
-    def __enter__(self):
-        sys.setrecursionlimit(self.limit)
-
-    def __exit__(self, type, value, tb):
-        sys.setrecursionlimit(self.old_limit)
-             
-def encode_state(circuit, Print=False):
-    # produces a dictionary that counts 00001, 00010, etc
-    # circuit is a list, not an object
-    
-    # print('Encoding state.')
-    # print('Circuit\t', circuit)
-    
-    digit_order = []
-    for i in circuit:
-        # print('Creating digit ', i)
-        digit_order.append(digit(i, 0))
-        
-    total_dimension = prod(circuit)
-    depth = 2 * (total_dimension - 1)
-    if depth > 3e3 and depth < 11100:
-        print('Requesting recursion limit of ', depth+45)
-        with recursion_limit(depth+45):    
-            encoding = recursive_enumeration(digit_order, []) 
-    elif depth > 11100: # this value will change from PC to PC
-        print('Exceeded system recursion limit')
-        return
-    else:
-        encoding = recursive_enumeration(digit_order, []) # this extra []
-        # fixes a strange concatenation problem
-    
-    if Print == True:
-        print(encoding)
-
-    return encoding
-
 def integrate(circuit, control, target, small_op, Print=False):
     # circuit : list of dimensions of all qudits
     # control & target : list of indices
     # input: small_op is the operation, acting on a list of control 
     # and target indices
     # integrate() creates the uber matrix for the quantum circuit
-    # 
-    # assume all controls before all targets
+
     print('\nIntegrating...')
 
     # front and end
@@ -373,12 +284,12 @@ def integrate(circuit, control, target, small_op, Print=False):
     # within the target range
     actors = list( hstack( [control, target] ))
     nonactors = list(range(len(circuit)))
-    # print('actors', actors)
-    # do this part better later
-    [ nonactors.remove(i) for i in actors ]
+    [ nonactors.remove(i) for i in actors ] # do this part better later
     [ nonactors.remove(i) for i in front_iterable ]
     [ nonactors.remove(i) for i in end_iterable ]
     # what's left should only be middle nonactors
+    # print('actors', actors)
+    # print('nonactors', nonactors)
     
     # check to see if integration is necessary
     if len(nonactors) == 0 and front_size-1 == 0 and end_size-1 == 0:
@@ -387,20 +298,19 @@ def integrate(circuit, control, target, small_op, Print=False):
     # else:
         # role_call(circuit, control, target)
     
-    # print('nonactors', nonactors)
     # group indices of the circuit into consecutive sequences
     # consec. seq. are already tensored together, just figure out the rest
     nonactor_groups = [ list(group) for group in consecutive_groups(nonactors) ]
     actor_groups = [ list(group) for group in consecutive_groups(actors) ]
-    actor_groups.pop() # we don't want to count the target as a control, 
+    actor_groups.pop() 
+    # we don't want to count the targets as controls, 
     # but it's not a nonactor either
     # print('nonactor groups', nonactor_groups)
-    # print('actor groups', actor_groups)
+    # print('actor groups', actor_groups)    
+
     semifinal = small_op
-    # print('semifinal\n', semifinal)
-    for index, group in enumerate(nonactor_groups):
-        # print('index', index)
-        # print('group', group)
+    # print('small\n', small_op)
+    for index_, group in enumerate(nonactor_groups):
         # what's the total dimensionality of this groups of middles?
         starting_control = group[0] - 1
         last_mid = group[-1]
@@ -409,17 +319,11 @@ def integrate(circuit, control, target, small_op, Print=False):
         
         # what's the total dimensionality of the controls before this group?
         # (both group lists are always the same size)
-        # i = nonactor_groups.index(mid) # where are we in the list of nonactor groups?
-        group = actor_groups[index] # find the corresponding group of actors
-        # print(group)
+
+        group = actor_groups[index_] # find the corresponding group of actors
         slice1 = slice(group[0], group[-1]+1) # here's the range in [ circuit ]
-        # print('Slice')            
-        # print(slice1)
         dims = circuit[slice1] # extract dims  
-        # print('Dims ' )
-        # print(dims)
         division = prod(dims) # multiply the dims together --> answer
-        # print('Division ', division)
         
         # apply redundant size increase
         semifinal = middle_tensor(semifinal, division, repeat)
@@ -622,28 +526,51 @@ def role_call(circuit, control, target):
     print('Circuit\t|', *array(p_circ))
     print('Index\t|', *array(p_i))
     print('Roles\t|', *array(p_roles))
-    
-if __name__ == "__main__":
-    qc = [2,2,2,2,2,2] # history (3,3) (x) board (3)
-    # state = init_state(nim)
-    # output_state(nim, state)
-          
-    qc = [2, 2, 2, 2, 3, 2, 2]
-    control = array([2,3]) + 2
-    target = array([ 1, 0, 2 ]) 
 
-    front = 1
-    [ qc.insert(i, 2) for i in range(front) ]
-    control, target = control + front, target + front
+def encode_state(circuit, Print=False):
+    l = len(circuit)
     
-    control = list(control)   
-    target = list(target)    
+    state = [0]*l
+    encoding = ['0'*l]
+    last_state = ''.join([str(i-1) for i in circuit ])
+    while encoding[-1] != last_state :
+        look = -1
+        
+        # print('\n' + str(len(encoding)) + 'th encoding')
+        # print('Input:\t', ''.join([ str(i) for i in state ]) )
+        # print('Examining ', state[look], ' at position ' + str(look) )
+        
+        incrementable = False
+        while not incrementable:   
+            # this loop looks at each digit and changes it to the next
+            # state. After that, it breaks, calling the else: marked (.)
+            
+            # print('Examining', state[look], ' at position ' + str(look) )
+            incrementable = state[look] + 1 < circuit[look]
+            if incrementable: 
+                state[look] += 1
+                # print('Incrementing to ' + str(state[look]) )
+            else:
+                state[look] = 0
+                # print('Digit ' + str(look) + ' now set to 0')
+                look -= 1
+                
+            # print('Current state: ' + ''.join([ str(i) for i in state ]))
+       
+        else: # (.)
+            # record newest edition
+            # print('Add state: ' + ''.join([ str(i) for i in state ]) )
+            encoding.append(''.join([ str(i) for i in state ]))
+        
+    if Print == True:
+        print(encoding)
     
-    print('----------------')
-    role_call(qc, control, target)
-    print('----------------')
-    
-    instruct = {'00': diffuse(8, [1,2,3])} # qudit_swap([2,2], 0, 1)} 
-    mat = create_control(qc, control, target, instruct, 
-                         Print=False, title_='this was produced with the test algorithm' )
+    return encoding
+ 
+if __name__ == "__main__":
+    qc = [2] * 1
+    start = timeit.default_timer()
+    encode_state(qc)
+    stop = timeit.default_timer()  
+    print('Time: ', stop - start)  
     
