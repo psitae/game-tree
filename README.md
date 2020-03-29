@@ -7,6 +7,10 @@ This algorithm will return the 1st forced win deterministically. It can also be 
 
 I suspect that the complexity of the algorithm is linear in the depth of the game tree, which means some versions of Go allowing games with 10^40 moves will not be accessible to this algorithm unless pruning is developed.
 
+## Background
+
+* The **circuit description** is a vector representing the quantum logic units in the quantum computer. Depending on the machine architecture, each unit may represet a qubit, qutrit, qu***d***it for ***d*** = dimensionality. A vector of ```[2,2,3]``` represents two qubits and one qutrit.
+
 ## System Requirements
 
 ## Dependencies
