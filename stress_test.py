@@ -29,8 +29,8 @@ data = []
 start_memory = get_resident_set_size()
 n = 1
 t = 0
-
-while t < 1: # runtime in seconds 
+under = 1 # runtime in seconds
+while t < under:  
     qc = [2] * n
 
     start = timeit.default_timer()
@@ -68,7 +68,7 @@ ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
 ax1.set_ylabel('Runtime (s)')
 ax2.set_ylabel('Memory usage (B)')
 
-plt.title('Encoding states stress test')
+plt.title('Encoding states stress test under ' + str(under) + 's')
 plt.show()
   
          
