@@ -29,7 +29,7 @@ data = []
 start_memory = get_resident_set_size()
 n = 1
 t = 0
-under = 1 # runtime in seconds
+under = 100 # runtime in seconds
 while t < under:  
     qc = [2] * n
 
