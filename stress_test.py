@@ -12,41 +12,35 @@ import timeit
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-from pathlib import Path
-from resource import getpagesize
 
-PAGESIZE = getpagesize()
-PATH = Path('/proc/self/statm')
 
-def get_resident_set_size() -> int:
-    """Return the current resident set size in bytes."""
-    # statm columns are: size resident shared text lib data dt
-    statm = PATH.read_text()
-    fields = statm.split()
-    return int(fields[1]) * PAGESIZE
+
 
 data = []
-start_memory = get_resident_set_size()
+
+
 n = 1
 t = 0
-under = 100 # runtime in seconds
+under = 10 # runtime in seconds
+
 while t < under:  
     qc = [2] * n
 
     start = timeit.default_timer()
-    ops.encode_state(qc)
+    mem_usage = ops.encode_state(qc)
     stop = timeit.default_timer() 
 
     t = stop - start
-    mem_usage = get_resident_set_size() - start_memory
-    if mem_usage == 0:
+
+
+    print('\nN:\t\t', n)
+    print('Time: \t', t)
+    print('Memory:\t', mem_usage )
+    
+    if mem_usage == 0: # log scale plots don't do 0
         mem_usage = 1e-6
     data.append( (n, t, mem_usage) )
     
-    print('N:\t\t', n)
-    print('Time: \t', t)
-    print('Memory:\t', mem_usage )
-
     n += 1
     
 data = np.array(data)

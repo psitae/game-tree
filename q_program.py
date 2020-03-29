@@ -61,3 +61,47 @@ def output_state(circuit, state, amplitude='no'):
         state_string += '+ ' + strings[i]
         
     print(state_string)
+    
+class quantum_circuit():
+    def __init__(self, dims, Print=False):
+        if Print:
+            print('Creating quantum circuit')
+            print( array(dims) )
+        self.dims = dims
+        self.size = prod(dims)
+        self.state = init_state(self.dims)
+        self.gates = []
+        
+    def printout(self):
+        output_state(self.dims, self.state, amplitude='no')
+        
+    def add_gate(self, gate):
+        self.gates.append(gate)
+    
+    def run(self, Print=False):
+        for gate in self.gates:
+            if Print:
+                print('Applying gate:\n', gate)
+                print('to state:\n', self.printout() )
+            self.state = gate @ self.state
+            if Print:
+                print('Result:\n')
+                self.printout()
+            
+if __name__ == '__main__':
+    qc = quantum_circuit([2,2], Print=True)
+    
+    qc.printout()    
+    
+    qc.add_gate(
+        single( qc.dims, 0, gates('hadamard') )
+               )
+
+    qc.add_gate(gates('cnot'))
+    
+    qc.run()
+    
+    qc.printout()
+
+
+

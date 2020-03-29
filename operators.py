@@ -530,6 +530,8 @@ def role_call(circuit, control, target):
 def encode_state(circuit, Print=False):
     l = len(circuit)
     
+    start_memory = get_resident_set_size()
+    
     state = [0]*l
     encoding = ['0'*l]
     last_state = ''.join([str(i-1) for i in circuit ])
@@ -565,12 +567,24 @@ def encode_state(circuit, Print=False):
     if Print == True:
         print(encoding)
     
-    return encoding
- 
+    mem_usage = get_resident_set_size() - start_memory
+    return mem_usage
+
+
+from pathlib import Path
+from resource import getpagesize
+
+
+
+def get_resident_set_size() -> int:
+    PAGESIZE = getpagesize()
+    PATH = Path('/proc/self/statm')
+    """Return the current resident set size in bytes."""
+    # statm columns are: size resident shared text lib data dt
+    statm = PATH.read_text()
+    fields = statm.split()
+    return int(fields[1]) * PAGESIZE 
+
 if __name__ == "__main__":
-    qc = [2] * 1
-    start = timeit.default_timer()
-    encode_state(qc)
-    stop = timeit.default_timer()  
-    print('Time: ', stop - start)  
+    fancy_print(gates('cnot'), encode_state([2,2]))
     
