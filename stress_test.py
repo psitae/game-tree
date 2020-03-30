@@ -21,7 +21,7 @@ data = []
 
 n = 1
 t = 0
-under = 10 # runtime in seconds
+under = 200 # runtime in seconds
 
 while t < under:  
     qc = [2] * n

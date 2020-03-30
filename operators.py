@@ -8,7 +8,7 @@ Created on Wed Mar 11 00:19:25 2020
 import sys, timeit
 from numpy import *
 from matplotlib.pyplot import *
-from math import log
+from math import *
 from more_itertools import consecutive_groups
 
 def gates(name, dim=2):
@@ -137,18 +137,7 @@ def D(i):
     result[0,0] = 0
 
     return prefactor * result
-
-    
-def single(circuit, i, gate): # how can i accept one OR two inputs for index
-    # integrates single-qudit operations into the whole circuit,
-    # which amounts to much tensor producting with identity matrices
-    
-    before = int(prod(circuit[0:i]))
-    after = int(prod(circuit[i+1:]))
-
-    result = many_kron([identity(before), gate, identity(after)])
-    return result
-    
+   
 def diffuse(dim, swaps, Print=False): # swaps is a list of the diffusees
     # this function produces a limited diffusion to certain states using the D() function
     swaps.sort()
@@ -205,29 +194,28 @@ def qudit_swap(circuit, i1, i2, Print=False):
         fancy_print(swap, encode_state(circuit))
     return swap
 
-def basis_add(circuit, i1, o):
-    # this operation performs modular addition of i1 and o,
-    # storing the result in o
-    
-    # new technique: don't dick around with patterns of the matrices,
-    # just implement the truth table directly
-    
-    encoding = encode_state(circuit, Print=True )
-    io = {}
-    for in_ in encoding:
-        out = ['0', '0' ]
-        out[i1] = in_[i1]
-        out[o] = str( (int(in_[i1]) + int(in_[o])) % circuit[o])
-        
-        io[in_] = ''.join(out) # this combines out from ['x', 'y'] to 'xy'
-    
-    matrix = truth_table_matrix(io, encoding)
-    return matrix
-
-def truth_table_matrix(orig, new, flip, Print=False):
+def truth_table_matrix(orig, perm, new=None, Print=False):
     # transforms for original encoding to new encoding
     
-    dim = len(orig)
+    print('\nCreating truth table matrix')
+    print('Permutation', perm)
+    print('New', new)
+    
+    immute = tuple(perm)
+    in_order = list(perm)
+    in_order.sort()
+    
+    flip = []
+    for code in orig:
+        str_array = array(list(code))
+        str_array[perm] = str_array[in_order]
+        flipped = ''.join(str_array)
+        # print('--------------')
+        # print('code \t', str(code))        
+        # print('flipped\t', flipped)
+        flip.append(flipped)     
+        
+    dim = len(flip)
     result = zeros([dim,dim])
     
     for i in flip:
@@ -238,15 +226,14 @@ def truth_table_matrix(orig, new, flip, Print=False):
         result[i2, i1] = 1
         
     if Print == True:
-        print('Printing from tt matrix()')
-        fancy_print(result, orig, new, 'QuMit/QuNit swap_op')
+        fancy_print(result, orig, 'Swap permutation: ' + str(perm), new )
         
     if is_unitary(result):
         return result
     else:
         print('Not a unitary matrix')
         
-def fancy_print(mat, encoding, encoding2=None, title_='Stock title'):
+def fancy_print(mat, encoding, title_='Stock title', encoding2=None, ):
 
     if encoding2 == None:
         encoding2 = encoding
@@ -499,38 +486,41 @@ def swap(perm, circuit, control, target):
     
     orig_encoding = encode_state(circuit)
     new_encoding = encode_state(new_circuit)
-    flip = []
-    for code in orig_encoding:
-        str_array = array(list(code))
-        str_array[perm] = str_array[in_order]
-        flipped = ''.join(str_array)
-        # print('--------------')
-        # print('code \t', str(code))        
-        # print('flipped\t', flipped)
-        flip.append(flipped) 
 
-    swap_op = truth_table_matrix(orig_encoding, new_encoding, flip, Print=False)
+
+    swap_op = truth_table_matrix( flip, orig_encoding, new_encoding, Print=False)
     # print('orig\n', orig_encoding)
     # print('new\n', new_encoding)
     
     return swap_op, new_circuit, new_control, new_target
 
-def role_call(circuit, control, target):
+# def role_call(circuit, control, target):
+#     roles = array(['.']*len(circuit))
+#     roles[control] = 'c'
+#     roles[target] = 't'
+    
+#     p_circ = [ f"{i} " for i in circuit ]
+#     p_i = [ f"{i} " for i in array(range(len(circuit))) ]
+#     p_roles = [ f"{i} " for i in roles ]
+#     print('Circuit\t|', *array(p_circ))
+#     print('Index\t|', *array(p_i))
+#     print('Roles\t|', *array(p_roles))
+
+def role_call(circuit, i):
     roles = array(['.']*len(circuit))
-    roles[control] = 'c'
-    roles[target] = 't'
+    roles[i] = 'o'
     
     p_circ = [ f"{i} " for i in circuit ]
     p_i = [ f"{i} " for i in array(range(len(circuit))) ]
     p_roles = [ f"{i} " for i in roles ]
+    print('-'*50)
     print('Circuit\t|', *array(p_circ))
     print('Index\t|', *array(p_i))
     print('Roles\t|', *array(p_roles))
+    print('-'*50)
 
 def encode_state(circuit, Print=False):
     l = len(circuit)
-    
-    start_memory = get_resident_set_size()
     
     state = [0]*l
     encoding = ['0'*l]
@@ -567,24 +557,166 @@ def encode_state(circuit, Print=False):
     if Print == True:
         print(encoding)
     
-    mem_usage = get_resident_set_size() - start_memory
-    return mem_usage
+    return encoding
 
+def subsection(circuit, i, gate, Print=False):
+    # i is a list of indices the gate applies to
+    print('\nTailoring small operation to full circuit matrix')
+    
+    role_call(circuit, i)
+    front_iterable = range(0, i[0])
+    front_slice = slice(0, i[0])
+    front_size = int(prod(circuit[front_slice]))
+    front = identity(front_size)
+    end_iterable = range(i[-1]+1,len(circuit))
+    end_slice = slice(i[-1]+1, -1)
+    end_size = int(prod(circuit[i[-1]+1:]))
+    end = identity(end_size)    
 
-from pathlib import Path
-from resource import getpagesize
+    # print('Front size', front_size)
+    # print('End size', end_size)
+    # print('Front\n', front)
+    # print('End\n', end) 
+    
+    circuit = array(circuit)
 
+    if prod(circuit[i]) != gate.shape[0]:
+        print('-'*40 + '\nAssigned indices do not match gate size\n' + '-'*40)
+        return 
+    
+    index_ = list(range(len(circuit))) 
+    front_i = index_[:i[0]]
+    middle_i = index_[i[0]:i[-1]+1]
+    end_i = index_[i[-1]+1:]
+    
+    print('front i\t', front_i)
+    print('middle i\t', middle_i)
+    print('end i\t', end_i)
+    
+    shifted_i = []
+    [ shifted_i.insert(0,t) for t in reversed(i) ]
+    print('shiftd i\t', shifted_i)
+    
+    passover = list(middle_i)
+    [ passover.remove(t) for t in i ]
+    print('passover\t', passover )
+    
+    if len(passover) == 0:
+        final = many_kron( [front, gate, end] )
+        if Print:
+            fancy_print(final, encode_state(circuit), title_='No fancy stuff')
+        return final
+    
+    reorder = passover + shifted_i
+    full_reorder = front_i + reorder + end_i
+    reorder_less = array(reorder) - i[0]
 
+    print('reorder \t', reorder)
+    print('rdr_less\t', reorder_less)
+    print('full r \t', full_reorder)
 
-def get_resident_set_size() -> int:
-    PAGESIZE = getpagesize()
-    PATH = Path('/proc/self/statm')
-    """Return the current resident set size in bytes."""
-    # statm columns are: size resident shared text lib data dt
-    statm = PATH.read_text()
-    fields = statm.split()
-    return int(fields[1]) * PAGESIZE 
+    # perm is a permutation using standard group theoretic notation
+    # perm = empty_like(middle)    
+    reorder_less = list(reorder_less)
+    perm = [ reorder_less.index(j) for j in range(len(reorder_less)) ]  
+    print('perm \t', perm)
+    
+    sect = tuple( circuit[middle_i] )
+    new_sect = array(sect)
+    new_sect[perm] = new_sect[range(len(perm))]
+    
+    print('sect  \t', array(sect))    
+    print('new_sect\t', new_sect)
+    
+    orig_encoding = encode_state(sect)
+    new_encoding = encode_state(new_sect)  
+
+    # print('original encoding\n', orig_encoding)
+    # print('new encoding\n', new_encoding)
+    
+    # flip = []
+    # for code in orig_encoding:
+    #     str_array = array(list(code))
+    #     str_array[perm] = str_array[range(len(perm))]
+    #     flipped = ''.join(str_array)
+    #     # print('--------------')
+    #     # print('code \t', str(code))        
+    #     # print('flipped\t', flipped)
+    #     flip.append(flipped) 
+        
+    swap_op = truth_table_matrix(orig_encoding, perm, new_encoding, Print=True)
+    
+    passover_dim = prod(circuit[passover])
+    bigger_gate = kron( identity( passover_dim ), gate )
+    print('swap_op size ', swap_op.shape)
+    print('big gate size', bigger_gate.shape)    
+    
+    semifinal = swap_op @ bigger_gate @ swap_op.transpose()
+    
+    final = many_kron( [front, semifinal, end ])
+    
+    if Print:
+        fancy_print(semifinal, orig_encoding, title_='Swapped and ungrown semifinal matrix')
+        
+        fancy_print(final, encode_state(circuit), title_='Swapped and grown final matrix')
+        
+    return final
+
+def get_location(circuit, code): 
+    # e.g. circuit: [2, 2, 2]
+    #         code: [1, 0, 1]
+    # returns 5  
+    multipliers = [ int(prod(circuit[i:])) for i in range(1,len(circuit)+1) ]
+    sum_ = 0    
+    for i, digit in enumerate(code): sum_ += digit * multipliers[i]
+    return sum_
+
+def get_encoding(circuit, location):
+    divisors = [ int(prod(circuit[i:])) for i in range(1,len(circuit)+1) ]   
+    encoding = [0]*len(circuit)
+    for i in range(len(circuit)): encoding[i] = floor(location/divisors[i]) % circuit[i]
+    return encoding
+
+def basis_add(circuit, addens, receiver, Print=False):
+    # this operation performs modular addition like so
+    #
+    # |a> ---- + ---|a>
+    #          |
+    #         ...
+    #          |
+    # |n> ---- + ---|n>
+    #          |
+    # |c> ---- = ---| sum(a:n) ⊕ c >
+    #
+    # where the ⊕ is addition mod dim(c),
+    # and addensspecifies adden(s) (+) and o specifies the reciever (=)
+    # both are lists
+    # 229C ⊜, 2295 ⊕
+
+    print('\nCreating basis add operator')
+    print('Circuit\t', circuit)
+    print('addens\t', addens)
+    print('receiver\t', receiver)
+    role_call(circuit, addens + [receiver])
+    encoding = encode_state(circuit, Print)
+    l = len(circuit)
+    dim = prod(circuit)
+    a_circuit = array(circuit)
+    matrix = zeros([dim, dim])
+    for count, in_ in enumerate(encoding):
+        in_ = array([ int(a) for a in in_])
+        out = array([0]*l)
+        out[addens] = in_[addens]
+        out[receiver] = sum(in_) % a_circuit[receiver]
+        # print('sum of in:', sum(in_))
+        # print('in: ', in_, '\tout: ', out, '\n')
+        out_i = encoding.index(''.join([str(a) for a in out]))
+        matrix[ out_i, count] = 1
+    
+    if Print:
+        fancy_print(matrix, encoding, title_='Basis add')
+    return matrix
 
 if __name__ == "__main__":
-    fancy_print(gates('cnot'), encode_state([2,2]))
-    
+    import q_program
+
