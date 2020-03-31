@@ -16,8 +16,12 @@ I suspect that the complexity of the algorithm growly linearly in the (depth of 
 
 ## Dependencies
 * **Recommended**: virtualenv
-* python3.7
+* Running python3.7 in a virtual environment
     * ```sudo apt install virtualenv```
-* numpy
-* itertools_more
-* matplotlib
+    * then ```virtualenv -p python3.7 env_name```
+    * then from the same directory, ```source ./env_name/bin/activate```
+    * from here, use ```pip3``` to install the depedencies
+      * numpy
+      * itertools_more 
+      * matplotlib
+      
