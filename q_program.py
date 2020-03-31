@@ -48,11 +48,43 @@ def output_state(circuit, state, divisions, show_amp=False):
         
     print(state_string)
     
+class nim:
+    
+    def __init__(self, board, Print=False):
+        board_dims = list(array(board) + 1)
+        self.depth = sum(board)
+        self.l = len(board)
+        history = [ self.depth - i for i in range(self.depth) ]
+        ancillas = board_dims
+        circuit = board_dims + history + ancillas
+
+        
+        if Print:
+            print('Nim game ' + str(board) + ' makes a circuit ')
+            print(array(circuit))
+            print(array(range(len(circuit))))
+            
+        self.circuit = quantum_circuit(circuit, divisions = [self.l, self.l + self.depth ],  Print=True)
+        init_state = [ board + [0]*self.depth + [0]*self.l ]
+        self.circuit.specify_state(init_state, Print=True)
+
+    def move(self):
+        # # copy the board information to ancillas
+        # for i in range(self.l):
+        #     copy_op = ops.copy(self.circuit.dims[i])
+        #     self.circuit.add_gate(copy_op, [i, self.l + self.depth + i], Print=True)
+        
+        add_op = ops.basis_add()
+        self.circuit.add_gate( )        
+        self.circuit.run(Print=True)
+        
+   
 class quantum_circuit():
     def __init__(self, dims, divisions = [], Print=False):
 
         self.dims = array(dims)
         self.size = prod(dims)
+        self.length = len(dims)
         self.state = zeros(self.size)
         self.gates = []
         self.divisions = divisions
@@ -61,10 +93,31 @@ class quantum_circuit():
     def printout(self, show_amp=False):
         output_state(self.dims, self.state, self.divisions, show_amp)
 
+    def init_state(self):
+        self.state[0]
+        
+    def specify_state(self, states, Print=False):
+        if any([ len(i) - self.length for i in states ]):
+            print('\nCannot specify state')
+            return
+        l = len(states)
+        norm = sqrt(1/l)
+        state_locations = [ ops.get_location(self.dims, s) for s in states ]
+        self.state[state_locations] = norm
+        print('\nSpecifying state(s) ' + str(states) + ' located at ' + str(state_locations))
+        
     def run(self, Print=False, amp=False):
         # initialize if not already done so
-        if not any(self.state): self.state[0] = 1
-        print('\n' + '-'*50)
+        if len(self.gates) == 0:
+            print('\n' + 'X'*50)
+            print('No operations to apply')
+            return
+        elif not any(self.state):
+            print('\n' + 'X'*50)
+            print('Cannot run quantum circuit without initializing state')
+            return
+
+        print('\n' + '='*50)
         print('Running quantum circuit')
         for gate in self.gates:
             if Print:
@@ -74,12 +127,13 @@ class quantum_circuit():
                 self.printout()
             self.state = gate @ self.state
             if Print:
-                print('Result:\n')
+                print('\nResult:')
                 self.printout(amp)        
 
-    def add_gate(self, gate, i=None):
+    def add_gate(self, gate, i=None, Print=False):
         
-        print('\nAdding gate to circuit:\n', gate)
+        print('\nAdding gate to circuit')
+        if Print: print(gate)
         
         if not ops.is_unitary(gate):
             print('Gate not unitary')
@@ -89,9 +143,9 @@ class quantum_circuit():
         if dim == self.size:
             self.gates.append(gate)
         else:
-            print('Discovered need to integrate gate into larger circuit')
-            print('Indexes: ', i)
-            self.gates.append( ops.subsection(self.dims, i, gate, True) )
+            print('\nDiscovered need to integrate gate into larger circuit')
+            if Print: print('Indexes: ', i)
+            self.gates.append( ops.subsection(self.dims, i, gate, Print) )
     
     def basis_add(self, addens, receiver, Print=False):
         print('\nDoing basis add from q_program')
@@ -101,44 +155,32 @@ class quantum_circuit():
         ops.role_call(self.dims, actors)
         fake_receiver = addens[-1] + 1
         circuit_section = self.dims[actors]
-        print('Actors\t', actors)
-        print('C sect\t', circuit_section)
-        print('actors_i', actors_i)
-        self.add_gate( ops.basis_add(circuit_section, actors_i[:-1], actors_i[-1], Print), actors)
         
-    def specify_state(self, states, Print=False):
-        l = len(states)
-        norm = sqrt(1/l)
-        state_locations = [ ops.get_location(self.dims, s) for s in states ]
-        print('\nSpecifying state(s) ' + str(states) + ' located at ' + str(state_locations))
+        if Print:
+            print('Actors\t', actors)
+            print('C sect\t', circuit_section)
+            print('actors_i', actors_i)
+        
+        gate_to_add = ops.basis_add(circuit_section, actors_i[:-1], actors_i[-1], Print)
+        self.add_gate( gate_to_add, actors, Print)
+        
+    def fan_out(self, from_, to, Print=False):
+        
 
         for i in range(l): self.state[state_locations] = norm
         if Print: self.printout()
 
-class nim:
-    
-    def __init__(self, board):
-        board_dims = array(board) + 1
-        depth = sum(board)
-        l = len(board)
-        history = [ depth - i for i in range(depth) ]
-        circuit = list(board_dims) + history + [depth+1]
-
-        print('Nim game ' + str(board) + ' makes a circuit ')
-        print(array(circuit))
-        print(array(range(len(circuit))))
-        self.game = quantum_circuit(circuit, divisions = [len(board), len(board) + depth ],  Print=True)
-        self.game.specify_state([board + [0]*depth], Print=True)
-
-    def move(self):
-        self.game.basis_add([0,1], [3], Print=True)
-        self.game.run(Print=True)
-        self.game.printout()
+    def practice_swap(self):
+        perm = [1, 0, 2]
+        swap_op = ops.swap2(self.dims, perm, True)
+        self.add_gate(swap_op)
         
+# qc = quantum_circuit([2,9,2])
+# qc.basis_add([0], [len(qc.dims)-1], Print=True)
+# qc.specify_state([[1,0,0],[1,1,0]])
+# qc.run(Print=True)
 
-qc = quantum_circuit([2,2,3], Print=True)
-qc.basis_add([1], [2], Print=True)
-qc.specify_state([[0,1,1],[1,1,1],[1,0,1]], Print=True)
-qc.run(Print=True)
+n = nim([1,2])
+n.move()
 
 

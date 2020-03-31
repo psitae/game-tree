@@ -72,20 +72,24 @@ def is_unitary(mat):
     # round exists to correct floating point errors, to do with square roots
     return result 
 
-def copy(x): # expecting qubit dimension
+def copy(x, Print=True): 
     # aka fan-out 
     # this operator will copy one basis vector to another
     # ONLY IF the target starts out at |0>
     # i.e. |x0> --> |xx>
     # 
     # currently unused
-
+    print('copying')
     result = identity(x**2)
     for i in range(1,x):
         result[ i*x, i*x ] = 0
         result[ i*x+i, i*x+i ] = 0
         result[ i*x+i, i*x] = 1
         result[ i*x, i*x + i ] = 1
+    
+    if Print:
+        matshow(result)
+        title('fan out ' + str(x) )
         
     return result
 
@@ -196,8 +200,9 @@ def truth_table_matrix(orig, perm, new=None, Print=False):
     # transforms for original encoding to new encoding
     
     print('\nCreating truth table matrix')
-    print('Permutation', perm)
-    print('New', new)
+    if Print:    
+        print('Permutation', perm)
+
     
     immute = tuple(perm)
     in_order = list(perm)
@@ -206,12 +211,10 @@ def truth_table_matrix(orig, perm, new=None, Print=False):
     flip = []
     for code in orig:
         str_array = array(list(code))
+        # print('\nstr array\t\t\t', str_array)
         str_array[perm] = str_array[in_order]
-        flipped = ''.join(str_array)
-        # print('--------------')
-        # print('code \t', str(code))        
-        # print('flipped\t', flipped)
-        flip.append(flipped)     
+        # print('str array permuted\t', str_array)
+        flip.append(tuple(str_array))     
         
     dim = len(flip)
     result = zeros([dim,dim])
@@ -654,7 +657,7 @@ def subsection(circuit, i, gate, Print=False):
     orig_encoding = encode_state(sect)
     new_encoding = encode_state(new_sect)  
        
-    swap_op = truth_table_matrix(orig_encoding, perm, Print)
+    swap_op = truth_table_matrix(orig_encoding, perm, new_encoding, Print)
     
     passover_dim = prod(circuit[passover])
     bigger_gate = kron( identity( passover_dim ), gate )
@@ -676,8 +679,8 @@ def subsection(circuit, i, gate, Print=False):
         print('perm \t', perm)
         print('sect  \t', array(sect))    
         print('new_sect\t', new_sect)
-        print('original encoding\n', orig_encoding)
-        print('new encoding\n', new_encoding)    
+        # print('original encoding\n', orig_encoding)
+        # print('new encoding\n', new_encoding)    
         print('swap_op size ', swap_op.shape)
         print('big gate size', bigger_gate.shape) 
         
@@ -715,7 +718,7 @@ def basis_add(circuit, addens, receiver, Print=False):
     # where the ⊕ is addition mod dim(c),
     # and addensspecifies adden(s) (+) and o specifies the reciever (=)
     # both are lists
-    # 229C ⊜, 2295 ⊕
+    # unicode 229C ⊜, 2295 ⊕
 
     print('\nCreating basis add operator')
     if Print:
@@ -744,6 +747,6 @@ def basis_add(circuit, addens, receiver, Print=False):
     return matrix
 
 if __name__ == "__main__":
-    swap2([2,2,2,2],[3,0],Print=True)
+    import q_program
     
 
