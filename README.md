@@ -20,7 +20,7 @@ I suspect that the complexity of the algorithm growly linearly in the (depth of 
     * ```sudo apt install virtualenv```
     * then ```virtualenv -p python3.7 env_name```
     * then from the same directory, ```source ./env_name/bin/activate```
-    * you should see the environment name appear in the command line, as: ```(env_name) user@computer:~/.../env_name$```
+    * you should see the environment name appear in the command line, as: ```(env_name) user@computer:~$```
     * from here, use ```pip3``` to install the depedencies
       * numpy
       * itertools_more 
