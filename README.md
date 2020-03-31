@@ -6,7 +6,7 @@ The minmax algorithm is then applied to all the nodes in the tree, ending in a v
 
 This algorithm will return the 1st forced win deterministically. It can also be configured to pick the Nth forced win. (Part of the algorithm orders all the possible games.) Remarkably, the phase of the qubits is never used: all qubits have a positive phase the entire time.
 
-I suspect that the complexity of the algorithm is linear in the depth of the game tree, which means some versions of Go allowing games with 10^40 moves will not be accessible to this algorithm unless pruning is developed.
+I suspect that the complexity of the algorithm growly linearly in the (depth of the game tree) times (average branching number), which means some versions of Go allowing games with 10^40 moves will not be accessible to this algorithm unless pruning is developed.
 
 ## Background
 
