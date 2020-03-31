@@ -15,7 +15,7 @@ I suspect that the complexity of the algorithm growly linearly in the (depth of 
 ## System Requirements
 
 ## Dependencies
-* **Recommended**: virtualenv
+* **Recommended**: Run this program in a virtual enviorment
 * Running python3.7 in a virtual environment
     * ```sudo apt install virtualenv```
     * then ```virtualenv -p python3.7 env_name```
