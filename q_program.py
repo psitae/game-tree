@@ -54,18 +54,26 @@ class nim:
         board_dims = list(array(board) + 1)
         self.depth = sum(board)
         self.l = len(board)
-        history = [ self.depth - i for i in range(self.depth) ]
-        ancillas = board_dims
-        circuit = board_dims + history + ancillas
 
-        
+        history = [ self.depth -i + 1 for i in range(self.depth) ]
+        ancilla = [ self.depth + 1 ]
+
+        self.board_i   = list(range(self.l))
+        next_index = self.board_i[-1] + 1
+        self.history_i = list(range(next_index, next_index + len(history) ))
+        next_index = self.history_i[-1] + 1
+        self.ancilla_i = list(range(next_index, next_index + len(ancilla) ))
+        print('Indices:\n', 'board\t', self.board_i, '\nhistory\t', self.history_i, '\nancillas\t', self.ancilla_i)
+        circuit = board_dims + history + ancilla
+
         if Print:
             print('Nim game ' + str(board) + ' makes a circuit ')
             print(array(circuit))
             print(array(range(len(circuit))))
             
         self.circuit = quantum_circuit(circuit, divisions = [self.l, self.l + self.depth ],  Print=True)
-        init_state = [ board + [0]*self.depth + [0]*self.l ]
+        #                       history       + ancilla
+        init_state = [ board + [0]*self.depth + [0] ]
         self.circuit.specify_state(init_state, Print=True)
 
     def move(self):
@@ -74,10 +82,31 @@ class nim:
         #     copy_op = ops.copy(self.circuit.dims[i])
         #     self.circuit.add_gate(copy_op, [i, self.l + self.depth + i], Print=True)
         
-        add_op = ops.basis_add()
-        self.circuit.add_gate( )        
+        # count number of possible moves
+        add_op = ops.basis_add(
+            self.circuit.dims[self.board_i], 
+            self.circuit.dims[self.ancilla_i[0]], 
+            Print=True )
+        self.circuit.add_gate(add_op, self.board_i + self.ancilla_i)
+        
+        # conditionally diffuse
+        instruct_1 = ops.conditional_diffusion(self.circuit.dims[self.history_i[0]])
+        [ print(i,instruct_1[i]) for i in instruct_1 ]
+        cond_diff_op = ops.create_control(self.circuit.dims, 
+                  self.ancilla_i[0], self.history_i[0], instruct_1, Print=True)
+        self.circuit.add_gate(cond_diff_op, self.history_i[0] + self.ancilla_i[0], True)
+        
+        # history changes board
+        
+        
         self.circuit.run(Print=True)
         
+    def move_num(self, num):
+        if num == 1 : 
+            subtract_op = ops.basis_add([4], 2, mode='subtract', Print=True)
+            self.circuit.add_gate(subtract_op, [2,0])
+            # self.circuit.run()
+            
    
 class quantum_circuit():
     def __init__(self, dims, divisions = [], Print=False):
@@ -128,7 +157,7 @@ class quantum_circuit():
             self.state = gate @ self.state
             if Print:
                 print('\nResult:')
-                self.printout(amp)        
+                self.printout(amp)
 
     def add_gate(self, gate, i=None, Print=False):
         
@@ -180,7 +209,7 @@ class quantum_circuit():
 # qc.specify_state([[1,0,0],[1,1,0]])
 # qc.run(Print=True)
 
-n = nim([1,2])
-n.move()
+n = nim([1,2], Print=True)
+n.move_num(1)
 
 

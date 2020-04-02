@@ -140,8 +140,10 @@ def D(i):
 
     return prefactor * result
    
-def diffuse(dim, swaps, Print=False): # swaps is a list of the diffusees
+def diffuse(dim, swaps, Print=False): 
+    # swaps is a list of the diffusees
     # this function produces a limited diffusion to certain states using the D() function
+    
     swaps.sort()
     d = D(len(swaps))
     result = identity(dim)
@@ -196,14 +198,13 @@ def qudit_swap(circuit, i1, i2, Print=False):
         fancy_print(swap, encode_state(circuit))
     return swap
 
-def truth_table_matrix(orig, perm, new=None, Print=False):
+def truth_table_matrix(orig, perm, new, Print=False):
     # transforms for original encoding to new encoding
     
     print('\nCreating truth table matrix')
     if Print:    
         print('Permutation', perm)
 
-    
     immute = tuple(perm)
     in_order = list(perm)
     in_order.sort()
@@ -218,7 +219,7 @@ def truth_table_matrix(orig, perm, new=None, Print=False):
         
     dim = len(flip)
     result = zeros([dim,dim])
-    
+
     for i in flip:
         # print('examining ', i)
         i1 = flip.index(i)
@@ -228,7 +229,7 @@ def truth_table_matrix(orig, perm, new=None, Print=False):
         
     if Print == True:
         fancy_print(result, orig, 'Swap permutation: ' + str(perm), new )
-        
+    
     if is_unitary(result):
         return result
     else:
@@ -407,7 +408,7 @@ def backwards_control_workaround(circuit, control, target, instruct, Print, titl
     # faulty need_swap count .
     # faulty swap_op   count 
     print('\nSwapping this control back to')
-    role_call(circuit, control, target)
+    role_call_2(circuit, control, target)
     
     swapped = swap_op.transpose() @ need_swap @ swap_op 
     
@@ -460,7 +461,7 @@ def create_control(circuit, control, target, instruct,
 
     # enough checking. We're ready to start
     print('\nCreating control.')
-    role_call(circuit, control, target)
+    role_call_2(circuit, control, target)
 
     # begin contstructing operator as all identity operations on the target
     trivial_partitions = [identity(target_size)] * control_size
@@ -473,7 +474,7 @@ def create_control(circuit, control, target, instruct,
     partitions = trivial_partitions
     for i in instruct:
         operation = instruct[i] # dict[key] = val
-        placement = control_encoding.index(i)
+        placement = get_location(controls, [int(i)] )
         partitions[placement] = operation
         
     # combine with direct sum
@@ -522,23 +523,23 @@ def swap(perm, circuit, control, target):
     new_encoding = encode_state(new_circuit)
 
 
-    swap_op = truth_table_matrix( flip, orig_encoding, new_encoding, Print=False)
+    swap_op = truth_table_matrix(orig_encoding, perm, new_encoding, Print=False)
     # print('orig\n', orig_encoding)
     # print('new\n', new_encoding)
     
     return swap_op, new_circuit, new_control, new_target
 
-# def role_call(circuit, control, target):
-#     roles = array(['.']*len(circuit))
-#     roles[control] = 'c'
-#     roles[target] = 't'
+def role_call_2(circuit, control, target):
+    roles = array(['.']*len(circuit))
+    roles[control] = 'c'
+    roles[target] = 't'
     
-#     p_circ = [ f"{i} " for i in circuit ]
-#     p_i = [ f"{i} " for i in array(range(len(circuit))) ]
-#     p_roles = [ f"{i} " for i in roles ]
-#     print('Circuit\t|', *array(p_circ))
-#     print('Index\t|', *array(p_i))
-#     print('Roles\t|', *array(p_roles))
+    p_circ = [ f"{i} " for i in circuit ]
+    p_i = [ f"{i} " for i in array(range(len(circuit))) ]
+    p_roles = [ f"{i} " for i in roles ]
+    print('Circuit\t|', *array(p_circ))
+    print('Index\t|', *array(p_i))
+    print('Roles\t|', *array(p_roles))
 
 def role_call(circuit, i):
     roles = array(['.']*len(circuit))
@@ -603,19 +604,25 @@ def subsection(circuit, i, gate, Print=False):
     # i is a list of indices the gate applies to
     print('\nTailoring small operation to full circuit matrix')
     
-    front_iterable = range(0, i[0])
-    front_slice = slice(0, i[0])
+    # accound for i with out of order indices
+    in_order = list( tuple( i ) )
+    in_order.sort()
+    print('in order', in_order)
+    print('i\t\t', i)
+    
+    front_iterable = range(0, in_order[0])
+    front_slice = slice(0, in_order[0])
     front_size = int(prod(circuit[front_slice]))
     front = identity(front_size)
-    end_iterable = range(i[-1]+1,len(circuit))
-    end_slice = slice(i[-1]+1, -1)
-    end_size = int(prod(circuit[i[-1]+1:]))
+    end_iterable = range(in_order[-1]+1,len(circuit))
+    end_slice = slice(in_order[-1]+1, -1)
+    end_size = int(prod(circuit[in_order[-1]+1:]))
     end = identity(end_size)    
 
-    # print('Front size', front_size)
-    # print('End size', end_size)
-    # print('Front\n', front)
-    # print('End\n', end) 
+    print('Front size', front_size)
+    print('End size', end_size)
+    print('Front\n', front)
+    print('End\n', end) 
     
     circuit = array(circuit)
 
@@ -624,6 +631,7 @@ def subsection(circuit, i, gate, Print=False):
         return 
     
     index_ = list(range(len(circuit))) 
+
     front_i = index_[:i[0]]
     middle_i = index_[i[0]:i[-1]+1]
     end_i = index_[i[-1]+1:]
@@ -631,7 +639,16 @@ def subsection(circuit, i, gate, Print=False):
     shifted_i = []
     [ shifted_i.insert(0,t) for t in reversed(i) ]
     
+    role_call(circuit, i)
+    print('front i\t', front_i)
+    print('middle i\t', middle_i)
+    print('end i\t', end_i)    
+    # print('passover\t', passover )    
+    print('shiftd i\t', shifted_i)
+    # print('reorder \t', reorder)
+    
     passover = list(middle_i)
+    print(passover, i)
     [ passover.remove(t) for t in i ]
                
     if len(passover) == 0:
@@ -656,13 +673,16 @@ def subsection(circuit, i, gate, Print=False):
     
     orig_encoding = encode_state(sect)
     new_encoding = encode_state(new_sect)  
-       
+    input()
     swap_op = truth_table_matrix(orig_encoding, perm, new_encoding, Print)
-    
+    print('Done with tt matrix()')
+    input()
     passover_dim = prod(circuit[passover])
     bigger_gate = kron( identity( passover_dim ), gate )
-
-    semifinal = swap_op.transpose() @ bigger_gate @ swap_op
+    print('about to calculate swap')
+    input()
+    
+    # semifinal = swap_op.transpose() @ bigger_gate @ swap_op
     
     final = many_kron( [front, semifinal, end ])
     
@@ -704,7 +724,10 @@ def get_encoding(circuit, location):
     for i in range(len(circuit)): encoding[i] = floor(location/divisors[i]) % circuit[i]
     return encoding
 
-def basis_add(circuit, addens, receiver, Print=False):
+
+    
+def basis_add(addens, receiver, mode='add', Print=False):
+    # addens and receiver tell you the dimensions of the qudits
     # this operation performs modular addition like so
     #
     # |a> ---- + ---|a>
@@ -719,32 +742,66 @@ def basis_add(circuit, addens, receiver, Print=False):
     # and addensspecifies adden(s) (+) and o specifies the reciever (=)
     # both are lists
     # unicode 229C ⊜, 2295 ⊕
+    #
 
+    addens = [ i for i in addens ]
+    receiver = [ receiver ]
+    addens_i = list(range(len(addens)))
+    receiver_i = len(addens)
+    
     print('\nCreating basis add operator')
     if Print:
-        print('Circuit\t', circuit)
-        print('addens\t', addens)
-        print('receiver\t', receiver)
-        role_call(circuit, addens + [receiver])
+        print('adden dims\t', addens)
+        print('receiver dim\t', receiver)
     
+    # circuit_section = [ circuit[i] for i in addens + [receiver] ]
+    circuit = addens + receiver
+    print('Working with circuit ', circuit)
     encoding = encode_state(circuit, Print)
     l = len(circuit)
     dim = prod(circuit)
-    a_circuit = array(circuit)
     matrix = zeros([dim, dim])
-    for count, in_ in enumerate(encoding):
-        in_ = array([ int(a) for a in in_])
-        out = array([0]*l)
-        out[addens] = in_[addens]
-        out[receiver] = sum(in_) % a_circuit[receiver]
-        print('sum of in:', sum(in_))
-        print('in: ', in_, '\tout: ', out, '\n')
-        out_i = get_location(circuit, out)
-        matrix[ out_i, count] = 1
+    a_circuit = array(circuit)
+    
+    if mode == 'add':
+        for count, in_ in enumerate(encoding):
+            in_ = array([ int(a) for a in in_])
+            out = array([0]*l)
+            out[addens_i] = in_[addens_i]
+            in_tot = sum(in_)
+            out[receiver_i] = in_tot % a_circuit[receiver_i]
+            # print('in: ', in_, '\tout: ', out, '\n')
+            out_i = get_location(circuit, out)
+            matrix[ out_i, count] = 1
+    
+    if mode == 'subtract':
+        for count, in_ in enumerate(encoding):
+            in_ = array([ int(a) for a in in_ ])
+            out = array([0]*l)
+            out[addens_i] = in_[addens_i]
+            in_tot = sum(in_[addens_i])
+            # print('in_tot:\t', in_tot)
+            in_tot = a_circuit[receiver_i] - in_tot
+            # print('subtract equiv:', in_tot)
+            out[receiver_i] = ( in_tot + in_[receiver_i] ) % a_circuit[receiver_i] 
+            # print('in: ', in_, '\tout: ', out, '\n')
+            out_i = get_location(circuit, out)
+            matrix[ out_i, count] = 1
     
     if Print:
-        fancy_print(matrix, encoding, title_='Basis add')
+        fancy_print(matrix, encoding, title_='Basis ' + mode)
+        
     return matrix
+
+def conditional_diffusion(max_diffusion, target_dim = None):
+    
+    if target_dim == None: target_dim = max_diffusion 
+    instruct = {}
+    for i in range(1, max_diffusion):
+        diffuse_op = diffuse(target_dim, [ j for j in range(1,i+1) ], True)
+        instruct[str(i)] = diffuse_op
+    
+    return instruct
 
 if __name__ == "__main__":
     import q_program
