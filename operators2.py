@@ -106,13 +106,8 @@ class truth_table:
         self.size = prod(circuit)
         self.diffuse = diffuse
 
-class full_gate(gate):
-    def __init__(self,  tt):
-        self.mat = tt2mat(tt)
-        self.unitary = is_unitary(self.mat)
-        gate.__init__(self, tt)
+
         
-class one_to_many(gate):
 class gate:
     def __init__(self, tt, notes='A gate'):
         self.tt = tt
@@ -142,12 +137,22 @@ class gate:
             yticks(range(self.size), encoding)              # output
         title(self.notes, pad = 50)
     
-    def is_unitary(self):
-        candidate = self.mat.dot(self.mat.transpose())
-        result = array_equiv(identity(self.size), candidate.round(3))
-        # round exists to correct floating point errors, to do with square roots
-        return result
+def is_unitary(mat):
+    candidate = mat @ mat.transpose()
+    size = mat.shape[0]
+    result = array_equiv(identity(size, object), candidate)
+    return result
     
+class full_gate(gate):
+    def __init__(self,  tt):
+        self.mat = tt2mat(tt)
+        self.unitary = is_unitary(self.mat)
+        gate.__init__(self, tt)
+        
+class one_to_many(gate):
+    def __init__(self, tt):
+        self.tt = tt
+        
 
 def tt2mat(tt):
     # this only works on permutation matrices
@@ -182,40 +187,70 @@ def fan_out(dim, control, target, Print=False):
     
     return gate(tt, 'symmetric', notes='Fan out gate')
 
-def D(i):
-    # these operators diffuse from the |0> state evenly to all the other states
-    # this structure reflects the game tree parent-children node connection 
-    # credit: https://quantumcomputing.stackexchange.com/
-    # questions/10239/how-can-i-fill-a-unitary-knowing-only-its-first-column
+def D(n, m = None):
+    """
+    These operators act on initialized states ( |0> ) of size n.
+    They cause the population in |0> to equally distribute to the first m states
+    |1>, |2>, ... |m>
     
-    prefactor = sp.Rational(1,i)
-    diag_ = ones(i+1) * (i-1)
-    diag_[0] = 0
-    result = -ones([i+1, i+1], dtype=object)
-    result[:,0] = sp.sqrt(i)
-    result[0,:] = sp.sqrt(i)
-    fill_diagonal(result, (i-1))
-    result[0,0] = 0
+    These gates are their own inverse.
+    This structure reflects the game tree parent-children node connection 
+    credit: https://quantumcomputing.stackexchange.com/questions/10239/how-can-i-fill-a-unitary-knowing-only-its-first-column
+    """
+    if m == None: m = n-1
+    
+    prefactor = sp.Rational(-1,m)
+    block = -ones([m+1,m+1], dtype=object)
+    # diag_ = ones(m+1) * (m-1)
+    fill_diagonal(block, (m-1))
+    block[:,0] = sp.sqrt(m)
+    block[0,:] = sp.sqrt(m)
+    block[0,0] = 0
+    block = block * prefactor
+    
+    result = identity(n, dtype=object)
+    result[:m+1,:m+1] = block
 
-    return prefactor*result
+    return result
 
 def mat2tt(mat):
-    # for right now, this function is specifically designed
-    # to work with D matrices, which apply to one qudit only
+    """
+    This function creates a truth table with keys as
+    |0>,|1>, ...
+    and values as
+    ((amp0,|0>), (amp1, |1>), ...)
     
-    dim = shape.mat[0]
-    encoding = [ tuple(i) for i in range(dim) ]
+    """
+    dim = mat.shape[0]
+    encoding = [ (int(i),) for i in range(dim) ]
     tt = truth_table([dim], diffuse=True)
     
+    for i in range(dim):
+        in_code = encoding[i]
+        out_amps = mat[:,i]
+        out_codes = [ (amp, i) for i, amp in enumerate(out_amps) ]
+        tt.table[in_code] = out_codes
     
+    return tt
+
+def printout(mat):
+    fig, ax = subplots(figsize=(5,5))
+    mat_ax = ax.matshow(r.astype(float), cmap='rainbow')
+    mat_ax.set_clim([-1,1])
+    # cbar.set_ticks = arange(-1,1,1/9) 
+    dim = int(mat.shape[0] - 1)
+    cbar = colorbar(mat_ax, ticks = arange(-1,1+1/dim,1/dim) ) 
+    if dim > 10: cbar.ax.tick_params(rotation=90)
+    generator = [r'$\frac{' + f"{i}" r'}{' + str(dim) + r'}$'  for i in range(1,dim) ]
+    rev_generator = [ i[:1] + '-' +  i[1:] for i in reversed(generator) ] 
+    cbar_ticklabels = ['-1'] + rev_generator + ['0'] + generator + ['1']
+    cbar.set_ticklabels(cbar_ticklabels)
     
-def diffuse():
-    1
-
-D(3)
-
-
+    for (i, j), z in ndenumerate(r):
+        ax.text(j, i, z, ha='center', va='center')
+        
+    show()
 
 
-
+tt = mat2tt(D(5))
 
