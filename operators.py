@@ -7,6 +7,7 @@ Created on Wed Mar 11 00:19:25 2020
 
 import sys, timeit
 from numpy import *
+from sympy import *
 from matplotlib.pyplot import *
 from math import *
 from more_itertools import consecutive_groups
@@ -682,7 +683,7 @@ def subsection(circuit, i, gate, Print=False):
     print('about to calculate swap')
     input()
     
-    # semifinal = swap_op.transpose() @ bigger_gate @ swap_op
+    semifinal = swap_op.transpose() @ bigger_gate @ swap_op
     
     final = many_kron( [front, semifinal, end ])
     
@@ -803,7 +804,28 @@ def conditional_diffusion(max_diffusion, target_dim = None):
     
     return instruct
 
+def tts(name):
+    if name == 'cnot':
+        return = {[1,0]:send_to([0,1]),
+                  [0,1]:send_to([1,0])}
+
+    if name == 'had':
+        return = {[0]:send_to(
+        
+class gate:
+    def __init__(self, code):
+        # code is either a list of integers or a list of lists of integers
+        if type(code[0]) == int
+            self.code = code
+        
+        if type(code[0]) == list:
+            self.amp = sp.sqrt( 1 / len(code) )
+            code = [ amp * c for c in code ]
+            
+class linklist:
+    def __init__(self, first=None):
+        self.first = first
 if __name__ == "__main__":
-    import q_program
+    
     
 

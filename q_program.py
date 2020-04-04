@@ -10,7 +10,7 @@ Created on Mon Mar 23 14:40:03 2020
 import operators as ops
 from numpy import *
 
-class display_object(): # used to print out states with amplitude
+class display_object: # used to print out states with amplitude
     def __init__(self, amp, code):
         self.amp = amp
         self.code = code
@@ -108,7 +108,7 @@ class nim:
             # self.circuit.run()
             
    
-class quantum_circuit():
+class quantum_circuit:
     def __init__(self, dims, divisions = [], Print=False):
 
         self.dims = array(dims)
@@ -123,7 +123,7 @@ class quantum_circuit():
         output_state(self.dims, self.state, self.divisions, show_amp)
 
     def init_state(self):
-        self.state[0]
+        self.state[0] = 1
         
     def specify_state(self, states, Print=False):
         if any([ len(i) - self.length for i in states ]):
@@ -159,10 +159,11 @@ class quantum_circuit():
                 print('\nResult:')
                 self.printout(amp)
 
-    def add_gate(self, gate, i=None, Print=False):
+    def add_gate(self, gate, indx=None, Print=False):
         
-        print('\nAdding gate to circuit')
-        if Print: print(gate)
+        if Print: 
+            print('\nAdding gate to circuit')
+            print(gate)
         
         if not ops.is_unitary(gate):
             print('Gate not unitary')
@@ -173,8 +174,8 @@ class quantum_circuit():
             self.gates.append(gate)
         else:
             print('\nDiscovered need to integrate gate into larger circuit')
-            if Print: print('Indexes: ', i)
-            self.gates.append( ops.subsection(self.dims, i, gate, Print) )
+            if Print: print('Indices: ', i)
+            self.gates.append( ops.integrate(self.dims, indx, gate, Print) )
     
     def basis_add(self, addens, receiver, Print=False):
         print('\nDoing basis add from q_program')
@@ -204,12 +205,15 @@ class quantum_circuit():
         swap_op = ops.swap2(self.dims, perm, True)
         self.add_gate(swap_op)
         
-# qc = quantum_circuit([2,9,2])
-# qc.basis_add([0], [len(qc.dims)-1], Print=True)
+qc = quantum_circuit([2,2])
+qc.add_gate(ops.gates('hadamard',2),0)
+qc.init_state()
+qc.printout()
+qc.run()
+qc.printout()
 # qc.specify_state([[1,0,0],[1,1,0]])
 # qc.run(Print=True)
 
-n = nim([1,2], Print=True)
-n.move_num(1)
+
 
 
