@@ -23,6 +23,5 @@ I suspect that the complexity of the algorithm growly linearly in the (depth of 
     * you should see the environment name appear in the command line, as: ```(env_name) user@computer:~$```
     * from here, use ```pip3``` to install the depedencies
       * numpy
-      * itertools_more 
       * matplotlib
       
