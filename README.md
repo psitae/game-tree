@@ -24,4 +24,5 @@ I suspect that the complexity of the algorithm growly linearly in the (depth of 
     * from here, use ```pip3``` to install the depedencies
       * numpy
       * matplotlib
+      * sympy
       
