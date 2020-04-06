@@ -7,13 +7,15 @@ Created on Mon Mar 23 14:40:03 2020
 """
 
 
-import operators as ops
+import operators2 as ops
+import sympy as sp
 from numpy import *
+
 
 class display_object: # used to print out states with amplitude
     def __init__(self, amp, code):
         self.amp = amp
-        self.code = code
+        self.code = '|' + code + '>'
         
 def output_state(circuit, state, divisions, show_amp=False):
     # this function prints out states formatted as xxx|yyy> + ...
@@ -31,11 +33,15 @@ def output_state(circuit, state, divisions, show_amp=False):
             state_string =  ''.join([str(i) for i in state_array])
             state_strings.append(state_string)
     
-    if show_amp:                                                        # amp                 state
-        for i in range(len(state_strings)): objs.append( display_object(str(state[i].round(3)), state_strings[i]) ) 
+    if show_amp:
+        for i in range(len(state_strings)):
+            #                                       amp                 state
+            objs.append( display_object(str(state[i].round(3)), state_strings[i]) ) 
                                                    
-    else:                                                     # amp     state
-        for i in range(len(state_strings)): objs.append( display_object('', state_strings[i] ))
+    else:
+        for i in range(len(state_strings)):
+                                         # amp     state
+            objs.append( display_object('', state_strings[i] ))
 
     strings = []
     for i in objs:
@@ -107,33 +113,69 @@ class nim:
             self.circuit.add_gate(subtract_op, [2,0])
             # self.circuit.run()
             
-   
 class quantum_circuit:
     def __init__(self, dims, divisions = [], Print=False):
 
         self.dims = array(dims)
         self.size = prod(dims)
         self.length = len(dims)
-        self.state = zeros(self.size)
-        self.gates = []
+        self.instructs = []
         self.divisions = divisions
-        if Print: print('Creating quantum circuit ', array(dims), ' with size ' + str(self.size) )
+        self.state = [0] * self.length
+        if Print: print('Creating quantum circuit ', self.dims, ' with size ' + str(self.size) )
     
     def printout(self, show_amp=False):
-        output_state(self.dims, self.state, self.divisions, show_amp)
-
-    def init_state(self):
-        self.state[0] = 1
         
-    def specify_state(self, states, Print=False):
-        if any([ len(i) - self.length for i in states ]):
-            print('\nCannot specify state')
-            return
-        l = len(states)
-        norm = sqrt(1/l)
+        # search for populated states and create a list of
+        # display objects to printout
+        populated = []
+        shown_amp = ''
+        for loc, amp in enumerate(self.state):
+            if amp != 0:
+                state_array = ops.get_encoding(self.dims, loc)
+                [ state_array.insert(i+j,';') for i,j in enumerate(self.divisions) ]
+                state_str =  ''.join([str(i) for i in state_array])
+                if show_amp:
+                    shown_amp = amp
+                populated.append( display_object(shown_amp, state_str ) )
+        
+        output_list = []
+        for base in populated:
+            output_list.append(base.amp + base.code)
+        
+        # intersperse with '+'
+        together = [' + '] * (len(populated) * 2 - 1)
+        together[0::2] = output_list
+        output_str = ''.join([s for s in together])
+        
+        print(output_str)
+                
+
+    def specify_state(self, state_str, Print=False):
+        """
+        state_str is a string, like '01100' or list of such strings
+        """
+        
+        # preprocessing
+        if type(state_str) == str:
+            states = [[ int(s) for s in state_str ]]
+        if type(state_str) == list:
+            states = []
+            for state in state_str:
+                states.append([ int(s) for s in state ])
+                
+            
+        # check validity of input
+        # if any([ len(state) - self.length for state in states ]):
+        #     print('\nCannot specify state')
+        #     return
+        
+        norm = 1/sp.sqrt(self.length)
         state_locations = [ ops.get_location(self.dims, s) for s in states ]
         self.state[state_locations] = norm
-        print('\nSpecifying state(s) ' + str(states) + ' located at ' + str(state_locations))
+        print('\nSpecifying state(s) ')
+        [ print(s) for s in state_str] 
+        print('located at ' + str(state_locations) )
         
     def run(self, Print=False, amp=False):
         # initialize if not already done so
@@ -150,70 +192,29 @@ class quantum_circuit:
         print('Running quantum circuit')
         for gate in self.gates:
             if Print:
-                print('\nApplying gate:\n', gate)
-                print('with shape ', gate.shape)
+                print('\nApplying gate:\n', gate.name)
+                print('to qudits ', gate.indx)
                 print('to state:')
                 self.printout()
-            self.state = gate @ self.state
+            self.state = gate.apply(self.state)
             if Print:
                 print('\nResult:')
                 self.printout(amp)
 
-    def add_gate(self, gate, indx=None, Print=False):
+    def add_gate(self, gate, indx=[], Print=False):
         
-        if Print: 
-            print('\nAdding gate to circuit')
-            print(gate)
+        self.gates.append((gate, indx))
         
-        if not ops.is_unitary(gate):
-            print('Gate not unitary')
-            return
-        
-        dim = gate.shape[0]
-        if dim == self.size:
-            self.gates.append(gate)
-        else:
-            print('\nDiscovered need to integrate gate into larger circuit')
-            if Print: print('Indices: ', i)
-            self.gates.append( ops.integrate(self.dims, indx, gate, Print) )
+def test_fan_out():
+    qc = quantum_circuit([2,2], divisions = [])
+    qc.specify_state(['10'])
+    qc.printout()
     
-    def basis_add(self, addens, receiver, Print=False):
-        print('\nDoing basis add from q_program')
-        addens.sort()
-        actors = addens + receiver
-        actors_i = list(range(len(actors)))
-        ops.role_call(self.dims, actors)
-        fake_receiver = addens[-1] + 1
-        circuit_section = self.dims[actors]
-        
-        if Print:
-            print('Actors\t', actors)
-            print('C sect\t', circuit_section)
-            print('actors_i', actors_i)
-        
-        gate_to_add = ops.basis_add(circuit_section, actors_i[:-1], actors_i[-1], Print)
-        self.add_gate( gate_to_add, actors, Print)
-        
-    def fan_out(self, from_, to, Print=False):
-        
-
-        for i in range(l): self.state[state_locations] = norm
-        if Print: self.printout()
-
-    def practice_swap(self):
-        perm = [1, 0, 2]
-        swap_op = ops.swap2(self.dims, perm, True)
-        self.add_gate(swap_op)
-        
-qc = quantum_circuit([2,2])
-qc.add_gate(ops.gates('hadamard',2),0)
-qc.init_state()
-qc.printout()
-qc.run()
-qc.printout()
-# qc.specify_state([[1,0,0],[1,1,0]])
-# qc.run(Print=True)
-
+    gate = ops.fan_out(qc.dims, 0, 1)
+    qc.add_gate(gate)
+    
+    
+test_add()
 
 
 
