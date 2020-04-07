@@ -138,13 +138,13 @@ class perm_gate(gate):
         leaving the amplitudes untouched.
         Appropriate for permutation operations.
         """
-        
-        for in_basis in state.keys():
+        #               don't change the iterate object
+        for in_basis in list(state.keys()):
             # failing to find in_basis in the table will return in_basis
             out_basis = self.tt.table.get(in_basis, in_basis)
             
             if out_basis is not in_basis:
-                # delete state[in_basis], associated its amplitude with out_basis
+                # associated amplitude of in_basis with out_basis
                 state[out_basis] = state.pop(in_basis)
         
         return state
@@ -250,7 +250,7 @@ def printout(mat, encoding = None, notes = None):
     This formats the matrix for human-readible inspection of the matrices
     """
     
-    fig, ax = subplots(figsize=(5,5))
+    fig, ax = subplots(figsize=(8,8))
     mat_ax = ax.matshow(mat.astype(float), cmap='rainbow')
     mat_ax.set_clim([-1,1])
     # cbar.set_ticks = arange(-1,1,1/9) 
@@ -265,14 +265,14 @@ def printout(mat, encoding = None, notes = None):
         cbar.set_ticklabels(cbar_ticklabels)
         
         
-        judge = empty([dim+1,dim+1])
-        for i in range(dim+1):
-            for j in range(dim+1):
-                judge[i,j] = len((mat[i,j].simplify()).args) == 2
+        # judge = empty([dim+1,dim+1])
+        # for i in range(dim+1):
+        #     for j in range(dim+1):
+        #         judge[i,j] = len((mat[i,j].simplify()).args) == 2
                 
-        if any(judge):
-            mat = mat.astype(float)
-            mat = mat.round(2)
+        # if any(judge):
+        # mat = mat.astype(float)
+        # mat = mat.round(4)
 
     for (i, j), z in ndenumerate(mat):
         ax.text(j, i, z, ha='center', va='center')
@@ -286,14 +286,22 @@ def printout(mat, encoding = None, notes = None):
     title(notes, pad = 50)
     show()
 
-def go_to_state(n,m):
+def go_to_state(n,m=None):
     """
     For equal superpositions of states in a n-dimensional system,
     this function will create an operator that sends all the amplitude
     to state |m>
     """
     # preprocessing
+    if m is None: m=1
     overlap = 1/sp.sqrt(n)
+    
+    # create |s> , |ans> and |!ans>
+    s = tuple(ones(n) * overlap)
+    ans = zeros(n, object)
+    ans[0] = 1
+    nans = array(s, object) * sp.sqrt(n)/sp.sqrt(n-1)
+    nans[0] = 0
     
     # compute angles
     theta_val = ( sp.asin(overlap) )
@@ -365,11 +373,20 @@ def copy32(control, target):
     
     return perm_gate(tt, notes='Copy 32')
     
+
+def exact_goto(n, Print=False):
+    m = n - 1
+    base = (m*sp.sqrt(n))**-1
+    y = 1/m - base
+    x = -(m-1)/m - base
+
+    mat = ones([n,n], object) * y
+    fill_diagonal(mat, x)
+    mat[:,0] = 1/sp.sqrt(n)
+    mat[0,:] = 1/sp.sqrt(n)
     
-# g = copy32(0,1)
-# print(g.tt.table)
-# printout(tt2mat(g.tt), encoding = encode_state(g.tt.circuit, Print=False), notes=g.notes )
-g = fan_out(2, 0, 1)
-state = {(1,0):1}
-g.apply(state)
-print(state)
+    if Print:
+        printout(mat, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
+    
+if __name__ == '__main__':
+    exact_goto(6, Print=True)
