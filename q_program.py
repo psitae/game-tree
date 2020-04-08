@@ -130,31 +130,52 @@ class quantum_circuit:
         self.length = len(dims)
         self.gate_set = gate_set()
         self.divisions = divisions
+        self.halt = False
         
         # the state starts initialized to all 0, this can be changed by 
         # the write_state() method
-        self.state = { '1' : [0] * self.length }
+        self.state = { (0,) * self.length : 1 }
         if Print: 
             print('Creating quantum circuit ', self.dims, 
                         ' with size ' + str(self.size) )
     def write_state(self, *state):
         """
-        State should be a dict object with
-        { basis : amplitude } pairs.
-        Also accepts strings like '0101' and converts them to dict objects
+        Accepts strings like '0101' and converts them to dict objects.
+        State should be a dict object with { basis : amplitude } pairs.
         """
-        if isinstance(state, dict): 
-            self.state = state
-        elif all([ isinstance(s, str) for s in state ]):
-            norm = 1/sp.sqrt(len(state))
-            for each_state in state:
-                self.state = { tuple([ int(s) for s in each_state ]) : norm }
-        else:
-            print('Improper state')
+        
+        # clear state reversibly
+        temp = self.state
+        self.state = {}
+        
+        norm = 1/sp.sqrt(len(state))
+        for s in state:
+            if len(s) != self.length:
+                print('Improper state assignment')
+                self.halt = True
+                self.state = temp
+                return
+            
+            basis = tuple([ int(num) for num in s ])
+            self.state[basis] =  norm 
+            
+    def order_state(self):
+        """
+        Returns a list of ordered states,
+        ( basis, amp )
+        """
+        lets_sort =  [ [basis, amp] for basis, amp in self.state.items() ]
+        for entry in lets_sort:
+            entry.append( ops.get_location(self.dims, entry[0]) )
+        
+        lets_sort.sort(key=lambda entry: entry[2])
+        
+        return [ (a, b) for a, b, _ in lets_sort ] 
+        
     def printout(self, show_amp = False):
         
         disp_objs = []
-        for basis, amp in self.state.items():
+        for basis, amp in self.order_state():
             
             # insert ; for divisioning modules
             [ basis.insert(i+j,';') for i,j in enumerate(self.divisions) ]
@@ -177,20 +198,37 @@ class quantum_circuit:
         print(output_str)
         
     def run(self, Print=False, show_amp=False):
+        """
+        Checks for the proper conditions, then applies each gate in order,
+        printing each state as the program progresses.
+        """
+        dividor = '\n' + '='*50
+        error_dividor = '\n' + 'X'*50 + '\n'
         
-        if self.gate_set.depth == 0:
-            print('\n' + 'X'*50)
-            print('No operations to apply')
+        # Are we really ready to run the circuit?
+        if self.halt:
+            print(error_dividor, 'Halted')
             return
         
-        print('\n' + '='*50)
+        if self.gate_set.depth == 0:
+            print(error_dividor, 'No operations to apply')
+            return
+        
+        print(dividor)
         print('Running quantum circuit')
-        for instruct in self.gate_set.instructions:
+        print('Initial state: \t')
+        self.printout()
+        for i, instruct in enumerate(self.gate_set.instructions):
             if Print:
-                print('\nApplying gate:\t', instruct.gate.notes)
-                print('to qudits ', instruct.indx)
-                
-            self.state = instruct.gate.apply(self.state, Print)
+                print('\nApplying gate:\t', instruct.gate.notes,
+                      '\t to qudits ', instruct.indx)
+            
+            self.state = instruct.gate.apply(self.state)
+            print('State ' + str(i+1) + ':')
+            self.printout()
+
+        print(dividor, '\nFinal State:')
+        self.printout()
     
     def add_instruct(self, instruct, Print=False):
         self.gate_set.add_instruct(instruct)
@@ -257,15 +295,22 @@ def mat_quantum_circuit(quantum_circuit):
         print(output_str)
         
 def test_fan_out():
-    qc = quantum_circuit([2,2], divisions = [])
-    qc.write_state('10', '00')
-    qc.printout()
+    qc = quantum_circuit([2,2,2], divisions = [])
+    qc.write_state('010', '000')
     
     gate = ops.fan_out(2, 0, 1)
-    instruct = instruction(gate, (0, 1))
+    instruct = instruction(gate, (1, 2))
     qc.add_instruct(instruct)
     qc.run(Print=True, show_amp = True)
 
-test_fan_out()
-
+def test_diffusion():
+    qc = quantum_circuit([4])
+    qc.write_state('0', '1', '2', '3')
+    
+    gate = ops.goto_state(4, send=1)
+    instruct = instruction(gate, (0))
+    qc.add_instruct(instruct)
+    qc.run()
+    
+test_diffusion()
 

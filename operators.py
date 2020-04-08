@@ -10,6 +10,8 @@ from numpy import *
 from matplotlib.pyplot import *
 import sympy as sp
 
+sp.init_printing(use_unicode=True)
+
 def encode_state(circuit, Print=False):
 
     l = len(circuit)
@@ -50,9 +52,13 @@ def get_location(circuit, code):
              code: [1, 0, 1]
      returns 5  
     """
+    # improve this
+    if type(code) is int or type(code) is object: code = [code]
+    
     multipliers = [ int(prod(circuit[i:])) for i in range(1,len(circuit)+1) ]
     sum_ = 0    
-    for i, digit in enumerate(code): sum_ += digit * multipliers[i]
+    for i, digit in enumerate(code): 
+        sum_ += digit * multipliers[i]
     return sum_
 
 def get_encoding(circuit, location):
@@ -130,10 +136,11 @@ class perm_gate(gate):
     def __init__(self, tt, notes='A perm gate'):
         gate.__init__(self, tt, notes)
         
-    def apply(self, state):
+    def apply(self, state, indx):
         """
         This method accepts a state object, which has a dict of 
         { basis : amplitude } items.
+        Using indx, it only looks at the basis digits 
         It simply changes each basis according to the truth table,
         leaving the amplitudes untouched.
         Appropriate for permutation operations.
@@ -148,6 +155,41 @@ class perm_gate(gate):
                 state[out_basis] = state.pop(in_basis)
         
         return state
+
+class diff_gate(gate):
+    """
+    Note that every diff_gate() object gets passed a truth table that is the
+    same size as the corresponding matrix.
+    """
+    def __init__(self, tt, notes='A diffusion gate'):
+        gate.__init__(self, tt, notes)
+        
+    def apply(self, state):
+        """
+        This method accepts a state object, which has a dict of 
+        { basis : amplitude } items. It transforms each basis into a list of 
+        amplitudes, adding the amplitudes to a state vector. After all the
+        adding, the nonzero elements of the state vector get re-encoded back 
+        into basis : amp dictionarys
+        Using indx, it only looks at the basis digits 
+
+        """
+        #empty state vector
+        vector = zeros(self.size, object)
+        #                  don't change the iterate object
+        for in_basis, in_amp in list(state.items()):
+            out_pairs = self.tt.table.get(in_basis)
+            out_bases = [ a for a, _ in out_pairs ]
+            out_amps  = [ a * in_amp for _, a in out_pairs ]
+            out_locs  = [ get_location(self.circuit, code) for code in out_bases ]
+            for loc, amp in zip(out_locs, out_amps):
+                vector[loc] += amp
+        out_state = {}
+        for loc, amp in enumerate(vector):
+            if amp == 0: continue
+            basis = get_encoding(self.circuit, loc)
+            out_state[ tuple(basis) ] = amp
+        return out_state
     
 class mat_gate(gate):
     def __init__(self,  tt, mat=None, notes='A mat gate'):
@@ -157,13 +199,10 @@ class mat_gate(gate):
         gate.__init__(self, tt)
         self.type = gate.mat.dtype
     
-    
-class diff_gate(gate):
-    def __init__(self, tt):
-        gate.__init(self, tt)
-
 def tt2mat(tt):
-    # this only works on permutation matrices
+    """
+    This only works on permutation matrices.
+    """
     mat = identity(tt.size, dtype = int8)
     for in_code in tt.table:
         out_code = tt.table[in_code]
@@ -230,17 +269,17 @@ def mat2tt(mat):
     This function creates a truth table with keys as
     |0>,|1>, ...
     and values as
-    ((amp0,|0>), (amp1, |1>), ...)
-    
+    ( (|0>, amp00), (|1>, amp01), ... ), 
+    ( (|0>, amp10), (|1>, amp11), ... ), ...
     """
     dim = mat.shape[0]
-    encoding = [ (int(i),) for i in range(dim) ]
+    encoding = encode_state([dim])
     tt = truth_table([dim], diffuse=True)
     
     for i in range(dim):
         in_code = encoding[i]
         out_amps = mat[:,i]
-        out_codes = [ (amp, i) for i, amp in enumerate(out_amps) ]
+        out_codes = [ (j, amp) for j, amp in enumerate(out_amps) ]
         tt.table[in_code] = tuple(out_codes)
     
     return tt
@@ -259,7 +298,8 @@ def printout(mat, encoding = None, notes = None):
     if mat.dtype == object:
         cbar = colorbar(mat_ax, ticks = arange(-1,1+1/dim,1/dim) ) 
         if dim > 10: cbar.ax.tick_params(rotation=90)
-        generator = [r'$\frac{' + f"{i}" r'}{' + str(dim) + r'}$'  for i in range(1,dim) ]
+        generator = [r'$\frac{' + f"{i}" r'}{'
+                     + str(dim) + r'}$'  for i in range(1,dim) ]
         rev_generator = [ i[:1] + '-' +  i[1:] for i in reversed(generator) ] 
         cbar_ticklabels = ['-1'] + rev_generator + ['0'] + generator + ['1']
         cbar.set_ticklabels(cbar_ticklabels)
@@ -286,33 +326,28 @@ def printout(mat, encoding = None, notes = None):
     title(notes, pad = 50)
     show()
 
-def go_to_state(n,m=None):
+def goto_state(n, send=0, Print=False):
     """
     For equal superpositions of states in a n-dimensional system,
     this function will create an operator that sends all the amplitude
-    to state |m>
+    to state |send>
     """
-    # preprocessing
-    if m is None: m=1
-    overlap = 1/sp.sqrt(n)
+    m = n - 1
+    base = (m*sp.sqrt(n))**-1
+    y = sp.Rational(1,m) - base
+    x = -sp.Rational(m-1,m) - base
+
+    mat = ones([n,n], object) * y
+    fill_diagonal(mat, x)
+    mat[:,send] = 1/sp.sqrt(n)
+    mat[send,:] = 1/sp.sqrt(n)
     
-    # create |s> , |ans> and |!ans>
-    s = tuple(ones(n) * overlap)
-    ans = zeros(n, object)
-    ans[0] = 1
-    nans = array(s, object) * sp.sqrt(n)/sp.sqrt(n-1)
-    nans[0] = 0
+    if Print:
+        printout(mat, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
     
-    # compute angles
-    theta_val = ( sp.asin(overlap) )
-    phi_val = ( sp.acos(overlap)/2 )
-    
-    # flip state & operator
-    f = sp.cos( theta_val + phi_val ), sp.sin( phi_val + theta_val ) 
-    flip_ =  nans.dot(f[0]) + ans.dot(f[1])
-    diffuse_op = 2 * outer(flip_, flip_) - identity(n, object)
-    
-    return diffuse_op
+    tt = mat2tt(mat)
+    notes = 'Size ' + str(n) + ', send '+ str(send) + 'goto_state gate'
+    return diff_gate(tt, notes)
 
 def AND(control, target):
     """
@@ -367,26 +402,12 @@ def copy32(control, target):
     circuit = [3]*2
     circuit[target] = 2
     tt = truth_table(circuit)
-    in_code = (2,0)
-    out_code = (2,1)
-    tt.perm_io( in_code, out_code )
+    tt.perm_io( (1,0), (1,1) )
+    tt.perm_io( (2,0), (2,2) )
     
     return perm_gate(tt, notes='Copy 32')
     
-
-def exact_goto(n, Print=False):
-    m = n - 1
-    base = (m*sp.sqrt(n))**-1
-    y = 1/m - base
-    x = -(m-1)/m - base
-
-    mat = ones([n,n], object) * y
-    fill_diagonal(mat, x)
-    mat[:,0] = 1/sp.sqrt(n)
-    mat[0,:] = 1/sp.sqrt(n)
-    
-    if Print:
-        printout(mat, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
-    
 if __name__ == '__main__':
-    exact_goto(6, Print=True)
+    
+    import q_program
+    
