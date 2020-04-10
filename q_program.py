@@ -10,7 +10,11 @@ Created on Mon Mar 23 14:40:03 2020
 import operators as ops
 import sympy as sp
 from numpy import *
+import copy
 
+
+def indexer(lst, *indices):
+    return (lst[i] for i in indices)
 
 class display_object:
     """
@@ -123,13 +127,18 @@ class quantum_circuit:
     The main object in the algorithm.
     """
     
-    def __init__(self, dims, divisions = [], Print=False):
-
+    def __init__(self, dims, divisions = [], name=False, Print=False):
+        """
+        Divisions is a list of the sizes of each division, it will be cum-added
+        """
+        if name: self.name = '\"' + name + '\"'
+        
         self.dims = array(dims)
         self.size = prod(dims)
         self.length = len(dims)
         self.gate_set = gate_set()
-        self.divisions = divisions
+        self.divisions = list(cumsum(divisions))
+        if len(self.divisions) > 1: self.divisions.pop()
         self.halt = False
         
         # the state starts initialized to all 0, this can be changed by 
@@ -138,6 +147,7 @@ class quantum_circuit:
         if Print: 
             print('Creating quantum circuit ', self.dims, 
                         ' with size ' + str(self.size) )
+    
     def write_state(self, *state):
         """
         Accepts strings like '0101' and converts them to dict objects.
@@ -171,17 +181,16 @@ class quantum_circuit:
         lets_sort.sort(key=lambda entry: entry[2])
         
         return [ (a, b) for a, b, _ in lets_sort ] 
-        
-    def printout(self, show_amp = False):
-        
+    def printout(self, show_amp=False):
         disp_objs = []
         for basis, amp in self.order_state():
             
             # insert ; for divisioning modules
+            basis =  list(basis)
             [ basis.insert(i+j,';') for i,j in enumerate(self.divisions) ]
             state_str =  ''.join([str(i) for i in basis])
             if show_amp:
-                shown_amp = amp
+                shown_amp = str(amp)
             else: 
                 shown_amp = ''
             disp_objs.append( display_object(shown_amp, state_str ) )
@@ -196,7 +205,6 @@ class quantum_circuit:
         output_str = ''.join([s for s in together])
         
         print(output_str)
-        
     def run(self, Print=False, show_amp=False):
         """
         Checks for the proper conditions, then applies each gate in order,
@@ -215,59 +223,90 @@ class quantum_circuit:
             return
         
         print(dividor)
-        print('Running quantum circuit')
+        print('Running quantum circuit', self.name)
         print('Initial state: \t')
         self.printout()
+        #
+        
         for i, instruct in enumerate(self.gate_set.instructions):
-            if Print:
-                print('\nApplying gate:\t', instruct.gate.notes,
-                      '\t to qudits ', instruct.indx)
+            print('\nInstruction ' + str(i+1))
+            print( instruct.gate.notes, ' acting on qudit(s) ', instruct.indx)
+                
+            # this is the integration method
+            # maybe it's worth making a state object that does that by itself
+            extract = []
+            for basis, amp in self.state.items():
+                extract.append([ basis,
+                                amp,
+                                [ basis[i] for i in instruct.indx ] ])
+            # extract is [ original-basis , original amp, relevent sub-basis ]
+            #                   0               1               2
+            for ex in extract:#  
+                dummy_state = { tuple(ex[2]) : ex[1] }
+                ex[2] = instruct.gate.apply(dummy_state)
+            # revelant sub-basis --> transformed sub-basis complete
+            # extract is now a nested list where each element is the following
+            # [  0 one basis element from the current state
+            #    1 amplitude A corresponding to that state
+            #    2 transformed relevant sub-basis list: [ b, amp_A*amp_B ] * n
+            #   this is labeled bunch below
+            self.state = {}
+            for bunch in extract:
+                # put the transformation back into the complete basis 
+                
+                in_basis = list(bunch[0])
+                for out_pair in bunch[2].items():
+                    for i, j in enumerate(instruct.indx):
+                        in_basis[j] = out_pair[0][i]
+                    in_key = tuple(in_basis)
+                    if self.state.get( in_key ) == None:
+                        self.state[ in_key] = out_pair[1]
+                    else:
+                        self.state[ in_key ] += out_pair[1]
+                    #  self.printout(show_amp=True)
             
-            self.state = instruct.gate.apply(self.state)
+            # remove zero amps if they exist
+            [ self.state.pop(basis) for basis, amp in list(self.state.items()) if amp == 0 ]
+            
             print('State ' + str(i+1) + ':')
             self.printout()
 
         print(dividor, '\nFinal State:')
         self.printout()
-    
-    def add_instruct(self, instruct, Print=False):
+    def add_instruct(self, gate, indx, Print=False):
+        instruct = instruction(gate, indx)
         self.gate_set.add_instruct(instruct)
-        
 def mat_quantum_circuit(quantum_circuit):
-    def __init__(self, dims, divisions = [], Print=False):
+    def __init__(self, dims, divisions = [], name='', Print=False):
         quantum_circuit.__init__(self, dims, divisions, Print)
-        self.mat = ops.tt2mat(self.tt)
         self.column = self.init_column()
-        
     def init_column(self):
-        col = zeros(self.length)
+        col = zeros(self.length, int8)
         col[0] = 1
         self.column = col
+    def write_state(self, *state, Print=False):
+        """
+        Call write_state() in the parent function as normal.
+        Also prepares the matrix state by finding the corresponding 
+        state vector and store it in self.column
+        """
         
-    def specify_state(self, *state_str, Print=False):
-        """
-        state_str is a string, like '01100' or list of such strings.
-        This function finds the corresponding state vector and stores
-        it in self.column
-        """
+        super(mat_quantum_circuit, self).write_state(state)
         
         # assuming equal superposition of all input state strings
-        norm = 1/sp.sqrt(len(state_str))
+        norm = 1/sp.sqrt(len(state))
         
         state_locations = []
-        for str_ in state_str:
+        for st in state:
             
             # check validity of input
-            if len(str_) > self.length:
+            if len(st) > self.length:
                 print('\nState too long to specify')
                 return
             
-            state_locations.append(ops.get_location(self.dims, str_))
-            self.state[state_locations] = norm
-            print('\nSpecifying state(s) ')
-            [ print(s) for s in state_str] 
-            print('located at ' + str(state_locations) )
-            
+            state_locations.append(ops.get_location(self.dims, st))
+            self.column[state_locations] = norm
+
     def printout(self, show_amp=False):
         
         # search for populated states and create a list of
@@ -304,13 +343,40 @@ def test_fan_out():
     qc.run(Print=True, show_amp = True)
 
 def test_diffusion():
-    qc = quantum_circuit([4])
-    qc.write_state('0', '1', '2', '3')
+    qc = quantum_circuit([4,4])
+    qc.write_state('00', '10', '20', '30')
     
-    gate = ops.goto_state(4, send=1)
-    instruct = instruction(gate, (0))
+    gate1 = ops.goto_state(4, send=1)
+    instruct = instruction(gate1, [0])
     qc.add_instruct(instruct)
+    
+    gate2 = ops.branch(4)
+    instruct = instruction(gate2, [1])
+    qc.add_instruct(instruct)
+    
     qc.run()
     
-test_diffusion()
+def test_logic():
+    qc = quantum_circuit([3,3,2,2,2], divisions=[2,2,1], name='Test AND')
+    
+    b = ops.branch(3)
+    qc.add_instruct( b, [0] )
+    qc.add_instruct( b, [1] )
+    
+    c32 = ops.copy32(0,1)
+    qc.add_instruct( c32, [0, 2] )
+    qc.add_instruct( c32, [1, 3] )
+    
+    qc2 = copy.deepcopy(qc)
+    qc2.name = 'Test OR'
+    
+    AND = ops.AND([0,1],2)
+    qc.add_instruct( AND, [2, 3, 4] )
+    
+    OR = ops.OR([0,1], 2)
+    qc2.add_instruct( OR, [2, 3, 4] )
+    
+    qc.run(True)
+    qc2.run(True)
+test_logic()
 

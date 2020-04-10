@@ -53,7 +53,10 @@ def get_location(circuit, code):
      returns 5  
     """
     # improve this
-    if type(code) is int or type(code) is object: code = [code]
+    if isinstance(code, int):
+        code = [code]
+    elif isinstance(code, tuple): 
+        code = list(code)
     
     multipliers = [ int(prod(circuit[i:])) for i in range(1,len(circuit)+1) ]
     sum_ = 0    
@@ -111,8 +114,14 @@ class truth_table:
         self.table = {}
         self.circuit = circuit
         self.size = int(prod(circuit))
+        self.diffuse = diffuse
         
     def perm_io(self, in_code, out_code):
+        """
+        Only works for permutation tables
+        """
+        
+        if self.diffuse: return
         self.table[in_code] = out_code
         self.table[out_code] = in_code
     
@@ -120,7 +129,7 @@ class truth_table:
         """"
         This only works with 1-1 tables
         """
-        
+        if self.diffuse: return
         return dict(map(reverse, tt.items() ))
 
         
@@ -136,7 +145,7 @@ class perm_gate(gate):
     def __init__(self, tt, notes='A perm gate'):
         gate.__init__(self, tt, notes)
         
-    def apply(self, state, indx):
+    def apply(self, state):
         """
         This method accepts a state object, which has a dict of 
         { basis : amplitude } items.
@@ -149,7 +158,6 @@ class perm_gate(gate):
         for in_basis in list(state.keys()):
             # failing to find in_basis in the table will return in_basis
             out_basis = self.tt.table.get(in_basis, in_basis)
-            
             if out_basis is not in_basis:
                 # associated amplitude of in_basis with out_basis
                 state[out_basis] = state.pop(in_basis)
@@ -178,9 +186,12 @@ class diff_gate(gate):
         vector = zeros(self.size, object)
         #                  don't change the iterate object
         for in_basis, in_amp in list(state.items()):
+            # account for single qudit gates
+            if not isinstance(in_basis, tuple): in_basis = (in_basis,)
+
             out_pairs = self.tt.table.get(in_basis)
-            out_bases = [ a for a, _ in out_pairs ]
-            out_amps  = [ a * in_amp for _, a in out_pairs ]
+            out_bases = [ pair[0] for pair in out_pairs ]
+            out_amps  = [ pair[1] * in_amp for pair in out_pairs ]
             out_locs  = [ get_location(self.circuit, code) for code in out_bases ]
             for loc, amp in zip(out_locs, out_amps):
                 vector[loc] += amp
@@ -238,6 +249,17 @@ def fan_out(dim, control, target, Print=False):
     
     return perm_gate(tt, notes='Fan out gate')
 
+def branch(n, m=None):
+    """
+    Returs a gate object based on the D() function
+    """
+    if m == None: m = n - 1
+    
+    tt = mat2tt(D(n, m))
+    
+    notes = 'Branching into first ' + str(m) + ' states'
+    return diff_gate(tt, notes)
+    
 def D(n, m = None):
     """
     These operators act on initialized states ( |0> ) of size n.
@@ -346,7 +368,7 @@ def goto_state(n, send=0, Print=False):
         printout(mat, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
     
     tt = mat2tt(mat)
-    notes = 'Size ' + str(n) + ', send '+ str(send) + 'goto_state gate'
+    notes = 'Size ' + str(n) + ', send '+ str(send) + ' goto_state gate'
     return diff_gate(tt, notes)
 
 def AND(control, target):
@@ -402,10 +424,9 @@ def copy32(control, target):
     circuit = [3]*2
     circuit[target] = 2
     tt = truth_table(circuit)
-    tt.perm_io( (1,0), (1,1) )
-    tt.perm_io( (2,0), (2,2) )
+    tt.perm_io( (2,0), (2,1) )
     
-    return perm_gate(tt, notes='Copy 32')
+    return perm_gate(tt, notes='Copy 32 from here')
     
 if __name__ == '__main__':
     
