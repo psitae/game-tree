@@ -85,9 +85,11 @@ class nim:
             self.circuit.run()
         
 class instruction:
-    def __init__(self, gate, indx):
+    def __init__(self, gate, indx, mat, uni):
         self.gate = gate
         self.indx = indx
+        self.mat  = mat
+        self.is_unitary = uni
         
 class gate_set:
     def __init__(self, *instruct):
@@ -144,6 +146,11 @@ class quantum_circuit:
         # the state starts initialized to all 0, this can be changed by 
         # the write_state() method
         self.state = { (0,) * self.length : 1 }
+        
+        # matrix implementation
+        self.mat = None
+        self.column = None
+        
         if Print: 
             print('Creating quantum circuit ', self.dims, 
                         ' with size ' + str(self.size) )
@@ -225,13 +232,25 @@ class quantum_circuit:
         print(dividor)
         print('Running quantum circuit', self.name)
         print('Initial state: \t')
-        self.printout()
-        #
+        self.printout(show_amp)
         
         for i, instruct in enumerate(self.gate_set.instructions):
-            print('\nInstruction ' + str(i+1))
+            print('\nInstruction ' + str(i+1) + '\n' + '-'*20)
             print( instruct.gate.notes, ' acting on qudit(s) ', instruct.indx)
-                
+            if isinstance(self, mat_quantum_circuit):
+                if instruct.is_unitary:
+                    print('\nMatrix implementation: Unitary Operation \u2714')
+                    unsimp = instruct.mat @ self.column              #  ✔
+                    self.column = [ sp.simplify(i) for i in unsimp ] 
+                    ops.printout(instruct.mat, ops.encode_state(self.dims),
+                        notes ='Gate ' + str(i+1) + '\n' + instruct.gate.notes)
+                    print('Matrix State: ' + str(i+1))
+                    self.col2state(show_amp)
+                else:
+                    print(error_dividor, 'Non-unitary operation')
+                    self.halt = True
+                    break
+                    
             # this is the integration method
             # maybe it's worth making a state object that does that by itself
             extract = []
@@ -268,22 +287,29 @@ class quantum_circuit:
             # remove zero amps if they exist
             [ self.state.pop(basis) for basis, amp in list(self.state.items()) if amp == 0 ]
             
-            print('State ' + str(i+1) + ':')
-            self.printout()
-
-        print(dividor, '\nFinal State:')
-        self.printout()
-    def add_instruct(self, gate, indx, Print=False):
-        instruct = instruction(gate, indx)
+            print('\nState ' + str(i+1) + ':')
+            self.printout(show_amp)
+        
+        if not self.halt:
+            print(dividor, '\nFinal State:')
+            self.printout(show_amp)
+        
+    def add_instruct(self, gate, indx, mat=None, uni=None, Print=False):
+        instruct = instruction(gate, indx, mat, uni)
         self.gate_set.add_instruct(instruct)
-def mat_quantum_circuit(quantum_circuit):
-    def __init__(self, dims, divisions = [], name='', Print=False):
-        quantum_circuit.__init__(self, dims, divisions, Print)
-        self.column = self.init_column()
+        
+class mat_quantum_circuit(quantum_circuit):
+    
+    def __init__(self, dims, divisions = [], name=False, Print=False):
+        quantum_circuit.__init__(self, dims, divisions, name, Print)
+        self.init_column()
+
+        
     def init_column(self):
-        col = zeros(self.length, int8)
+        col = zeros(self.size, object)
         col[0] = 1
         self.column = col
+        
     def write_state(self, *state, Print=False):
         """
         Call write_state() in the parent function as normal.
@@ -306,32 +332,66 @@ def mat_quantum_circuit(quantum_circuit):
             
             state_locations.append(ops.get_location(self.dims, st))
             self.column[state_locations] = norm
+            
+    def add_instruct(self, gate, indx, Print=False):
+        """
+        Creates a matrix equivalent to the (gate + index)
+        Calls add_instruct() in the parent function, passing gate, indx and mat
+        """
+        
+        # set up repetitions
+        rest_circ = list(self.dims)
+        for num, idx in enumerate(indx):
+            rest_circ.pop(idx - num)
+        rest_encoding = ops.encode_state(rest_circ, type_='list')
+        full_encoding = ops.encode_state(self.dims, type_='list')
+        
+        # matrix integration
+        # diffuse gates
+        if gate.tt.type == 'diffuse':
+            uber = zeros([self.size, self.size], object)
+            for in_basis, out_pairs in gate.tt.table.items():
+                for code in rest_encoding:
+                    full_in_code = copy.copy(code)
+                    [ full_in_code.insert(i, in_basis[j]) for j, i in enumerate(indx)]
+                    in_loc = full_encoding.index(full_in_code)
+                    for pair in out_pairs:
+                        full_out_code = copy.copy(code)
+                        [ full_out_code.insert(i, pair[0][j])
+                         for j, i in enumerate(indx) ]
+                        out_loc = full_encoding.index(full_out_code)
+                        uber[full_out_code, full_in_code] = pair[1]
+            
+        # perm gates
+        elif gate.tt.type == 'perm':
+            uber = identity(self.size, uint8)
+            for in_basis, out_basis in gate.tt.table.items():
+                for code in rest_encoding:
+                    full_in_code = copy.copy(code)
+                    full_out_code = copy.copy(code)
+                    for j, i in enumerate(indx):
+                        full_in_code.insert(i, in_basis[j])
+                        full_out_code.insert(i, out_basis[j])
+                    in_loc = full_encoding.index(full_in_code)
+                    out_loc = full_encoding.index(full_out_code)
+                    uber[ in_loc, in_loc ] = 0
+                    uber[ out_loc, in_loc ] = 1
 
-    def printout(self, show_amp=False):
+        uni = ops.is_unitary(uber)
+        super(mat_quantum_circuit, self).add_instruct(gate, indx, uber, uni, Print)
+    
+    def col2state(self, show_amp):
+        """
+        Convert the column object into a normal state object and prints
+        it out for comparison to self.state
+        """
+        temp = self.state
+        col_state = { tuple(ops.get_encoding(self.dims, loc)) : amp 
+                for loc, amp in enumerate(self.column) if amp != 0 }
         
-        # search for populated states and create a list of
-        # display objects to printout
-        populated = []
-        shown_amp = ''
-        for loc, amp in enumerate(self.state):
-            if amp != 0:
-                state_array = ops.get_encoding(self.dims, loc)
-                [ state_array.insert(i+j,';') for i,j in enumerate(self.divisions) ]
-                state_str =  ''.join([str(i) for i in state_array])
-                if show_amp:
-                    shown_amp = amp
-                populated.append( display_object(shown_amp, state_str ) )
-        
-        output_list = []
-        for base in populated:
-            output_list.append(base.amp + base.code)
-        
-        # intersperse with '+'
-        together = [' + '] * (len(populated) * 2 - 1)
-        together[0::2] = output_list
-        output_str = ''.join([s for s in together])
-        
-        print(output_str)
+        self.state = col_state
+        self.printout(show_amp)
+        self.state = temp
         
 def test_fan_out():
     qc = quantum_circuit([2,2,2], divisions = [])
@@ -357,9 +417,9 @@ def test_diffusion():
     qc.run()
     
 def test_logic():
-    qc = quantum_circuit([3,3,2,2,2], divisions=[2,2,1], name='Test AND')
+    qc = mat_quantum_circuit([3,3,2,2,2], divisions=[2,2,1], name='Test AND')
     
-    b = ops.branch(3)
+    b = ops.goto_state(3)
     qc.add_instruct( b, [0] )
     qc.add_instruct( b, [1] )
     
@@ -378,5 +438,14 @@ def test_logic():
     
     qc.run(True)
     qc2.run(True)
+
+def test_matrix_check():
+    qc1 = mat_quantum_circuit([4], name='Test matrix check')
+    
+    qc1.add_instruct( ops.branch(4), [0] )
+    qc1.add_instruct( ops.goto_state(4, send=3 ), [0] )
+    
+    qc1.run(show_amp=True)
+    
 test_logic()
 
