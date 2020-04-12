@@ -4,12 +4,14 @@
 Created on Mon Mar 23 14:40:03 2020
 
 @author: tony
+
 """
 
 
 import operators as ops
 import sympy as sp
 from numpy import *
+import matplotlib.pyplot as plt
 import copy
 
 
@@ -23,66 +25,6 @@ class display_object:
     def __init__(self, amp, code):
         self.amp = amp
         self.code = '|' + code + '>'
-        
-    
-class nim:
-    
-    def __init__(self, board, Print=False):
-        board_dims = list(array(board) + 1)
-        self.depth = sum(board)
-        self.l = len(board)
-
-        history = [ self.depth -i + 1 for i in range(self.depth) ]
-        ancilla = [ self.depth + 1 ]
-
-        self.board_i   = list(range(self.l))
-        next_index = self.board_i[-1] + 1
-        self.history_i = list(range(next_index, next_index + len(history) ))
-        next_index = self.history_i[-1] + 1
-        self.ancilla_i = list(range(next_index, next_index + len(ancilla) ))
-        print('Indices:\n', 'board\t', self.board_i, '\nhistory\t', self.history_i, '\nancillas\t', self.ancilla_i)
-        circuit = board_dims + history + ancilla
-
-        if Print:
-            print('Nim game ' + str(board) + ' makes a circuit ')
-            print(array(circuit))
-            print(array(range(len(circuit))))
-            
-        self.circuit = quantum_circuit(circuit, divisions = [self.l, self.l + self.depth ],  Print=True)
-        #                       history       + ancilla
-        init_state = [ board + [0]*self.depth + [0] ]
-        self.circuit.specify_state(init_state, Print=True)
-
-    def move(self):
-        # # copy the board information to ancillas
-        # for i in range(self.l):
-        #     copy_op = ops.copy(self.circuit.dims[i])
-        #     self.circuit.add_gate(copy_op, [i, self.l + self.depth + i], Print=True)
-        
-        # count number of possible moves
-        add_op = ops.basis_add(
-            self.circuit.dims[self.board_i], 
-            self.circuit.dims[self.ancilla_i[0]], 
-            Print=True )
-        self.circuit.add_gate(add_op, self.board_i + self.ancilla_i)
-        
-        # conditionally diffuse
-        instruct_1 = ops.conditional_diffusion(self.circuit.dims[self.history_i[0]])
-        [ print(i,instruct_1[i]) for i in instruct_1 ]
-        cond_diff_op = ops.create_control(self.circuit.dims, 
-                  self.ancilla_i[0], self.history_i[0], instruct_1, Print=True)
-        self.circuit.add_gate(cond_diff_op, self.history_i[0] + self.ancilla_i[0], True)
-        
-        # history changes board
-        
-        
-        self.circuit.run(Print=True)
-        
-    def move_num(self, num):
-        if num == 1 : 
-            subtract_op = ops.basis_add([4], 2, mode='subtract', Print=True)
-            self.circuit.add_gate(subtract_op, [2,0])
-            self.circuit.run()
         
 class instruction:
     def __init__(self, gate, indx, mat, uni):
@@ -235,16 +177,25 @@ class quantum_circuit:
         self.printout(show_amp)
         
         for i, instruct in enumerate(self.gate_set.instructions):
-            print('\nInstruction ' + str(i+1) + '\n' + '-'*20)
+            num = str(i+1)
+            print('\nInstruction ' + num + '\n' + '-'*20)
             print( instruct.gate.notes, ' acting on qudit(s) ', instruct.indx)
             if isinstance(self, mat_quantum_circuit):
+                # print uber matrix, unitary or not
+                # plt.figure(figsize=(10,10))
+                ax = plt.matshow(instruct.mat.astype(float), cmap='rainbow')
+                cbar = plt.colorbar( ticks = [] )
+                ax.set_clim(-1, 1)
+                # plt.show()
+                
+                plt.title('Gate: ' + num + '\nFull Matrix operation', pad=20)
                 if instruct.is_unitary:
                     print('\nMatrix implementation: Unitary Operation \u2714')
                     unsimp = instruct.mat @ self.column              #  ✔
                     self.column = [ sp.simplify(i) for i in unsimp ] 
-                    ops.printout(instruct.mat, ops.encode_state(self.dims),
-                        notes ='Gate ' + str(i+1) + '\n' + instruct.gate.notes)
-                    print('Matrix State: ' + str(i+1))
+                    title_ = 'Gate ' + num + ':\n' + instruct.gate.notes
+                    ops.printout(instruct.gate, title_ )
+                    print('Matrix State: ' + num)
                     self.col2state(show_amp)
                 else:
                     print(error_dividor, 'Non-unitary operation')
@@ -287,7 +238,7 @@ class quantum_circuit:
             # remove zero amps if they exist
             [ self.state.pop(basis) for basis, amp in list(self.state.items()) if amp == 0 ]
             
-            print('\nState ' + str(i+1) + ':')
+            print('\nState ' + num + ':')
             self.printout(show_amp)
         
         if not self.halt:
@@ -338,45 +289,50 @@ class mat_quantum_circuit(quantum_circuit):
         Creates a matrix equivalent to the (gate + index)
         Calls add_instruct() in the parent function, passing gate, indx and mat
         """
-        
-        # set up repetitions
-        rest_circ = list(self.dims)
-        for num, idx in enumerate(indx):
-            rest_circ.pop(idx - num)
-        rest_encoding = ops.encode_state(rest_circ, type_='list')
-        full_encoding = ops.encode_state(self.dims, type_='list')
-        
-        # matrix integration
-        # diffuse gates
-        if gate.tt.type == 'diffuse':
-            uber = zeros([self.size, self.size], object)
-            for in_basis, out_pairs in gate.tt.table.items():
-                for code in rest_encoding:
-                    full_in_code = copy.copy(code)
-                    [ full_in_code.insert(i, in_basis[j]) for j, i in enumerate(indx)]
-                    in_loc = full_encoding.index(full_in_code)
-                    for pair in out_pairs:
-                        full_out_code = copy.copy(code)
-                        [ full_out_code.insert(i, pair[0][j])
-                         for j, i in enumerate(indx) ]
-                        out_loc = full_encoding.index(full_out_code)
-                        uber[full_out_code, full_in_code] = pair[1]
+        # do we need matrix integration?
+        if len(indx) == len(self.dims):
+            if gate.mat is None: gate.mat = ops.tt2mat(gate.tt)
+            uber = gate.mat
+        else:
+            # set up repetitions
+            rest_circ = list(self.dims)
+            for num, idx in enumerate(indx):
+                rest_circ.pop(idx - num)
+            rest_encoding = ops.encode_state(rest_circ, type_='list')
+            full_encoding = ops.encode_state(self.dims, type_='list')
             
-        # perm gates
-        elif gate.tt.type == 'perm':
-            uber = identity(self.size, uint8)
-            for in_basis, out_basis in gate.tt.table.items():
-                for code in rest_encoding:
-                    full_in_code = copy.copy(code)
-                    full_out_code = copy.copy(code)
-                    for j, i in enumerate(indx):
-                        full_in_code.insert(i, in_basis[j])
-                        full_out_code.insert(i, out_basis[j])
-                    in_loc = full_encoding.index(full_in_code)
-                    out_loc = full_encoding.index(full_out_code)
-                    uber[ in_loc, in_loc ] = 0
-                    uber[ out_loc, in_loc ] = 1
-
+            # matrix integration
+            # diffuse gates
+            if gate.tt.type == 'diffuse':
+                uber = identity(self.size, object)
+                for in_basis, out_pairs in gate.tt.table.items():
+                    for code in rest_encoding:
+                        full_in_code = copy.copy(code)
+                        [ full_in_code.insert(i, in_basis[j]) for j, i in enumerate(indx)]
+                        in_loc = full_encoding.index(full_in_code)
+                        uber[ in_loc, in_loc ] = 0
+                        for pair in out_pairs:
+                            full_out_code = copy.copy(code)
+                            [ full_out_code.insert(i, pair[0][j])
+                             for j, i in enumerate(indx) ]
+                            out_loc = full_encoding.index(full_out_code)
+                            uber[out_loc, in_loc] = pair[1]
+            
+            # perm gates
+            elif gate.tt.type == 'perm':
+                uber = identity(self.size, uint8)
+                for in_basis, out_basis in gate.tt.table.items():
+                    for code in rest_encoding:
+                        full_in_code = copy.copy(code)
+                        full_out_code = copy.copy(code)
+                        for j, i in enumerate(indx):
+                            full_in_code.insert(i, in_basis[j])
+                            full_out_code.insert(i, out_basis[j])
+                        in_loc = full_encoding.index(full_in_code)
+                        out_loc = full_encoding.index(full_out_code)
+                        uber[ in_loc, in_loc ] = 0
+                        uber[ out_loc, in_loc ] = 1
+        
         uni = ops.is_unitary(uber)
         super(mat_quantum_circuit, self).add_instruct(gate, indx, uber, uni, Print)
     
@@ -392,9 +348,9 @@ class mat_quantum_circuit(quantum_circuit):
         self.state = col_state
         self.printout(show_amp)
         self.state = temp
-        
+
 def test_fan_out():
-    qc = quantum_circuit([2,2,2], divisions = [])
+    qc = mat_quantum_circuit([2,2,2], divisions = [], name='Test fan out')
     qc.write_state('010', '000')
     
     gate = ops.fan_out(2, 0, 1)
@@ -440,12 +396,38 @@ def test_logic():
     qc2.run(True)
 
 def test_matrix_check():
-    qc1 = mat_quantum_circuit([4], name='Test matrix check')
+    qc = mat_quantum_circuit([2,3,2], name='Test matrix check')
     
-    qc1.add_instruct( ops.branch(4), [0] )
-    qc1.add_instruct( ops.goto_state(4, send=3 ), [0] )
+    g1 = ops.branch(3)
+    qc.add_instruct( g1, [1] )
+    g2 = ops.goto_state(3)
+    qc.add_instruct( g2, [1] )
     
-    qc1.run(show_amp=True)
+    qc.run(show_amp=True)
     
-test_logic()
+def test_control_ops():
+    qc = mat_quantum_circuit([3,3], name='Test control operations')
+    
+    b = ops.branch(3)
+    qc.add_instruct( b, [0])
+    qc.add_instruct( b, [1])
+    
+    go1 = ops.goto_state(3)
+    go2 = ops.goto_state(3, 2)
+    
+    directions = { (1,) : go1, (2,) : go2 }
+    
+    ctl_go = ops.create_control([3,3], 0, 1, directions)
+    qc.add_instruct(ctl_go, [0, 1])
+    
+    qc.run(show_amp=True)
+    
+# test_logic()
+# test_matrix_check()
+test_control_ops()
+
+
+
+
+
 

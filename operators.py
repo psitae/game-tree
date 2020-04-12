@@ -10,14 +10,14 @@ from numpy import *
 from matplotlib.pyplot import *
 import sympy as sp
 
-sp.init_printing(use_unicode=True)
+# sp.init_printing(use_unicode=True)
 
-def encode_state(circuit, type_='tuple', Print=False):
+def encode_state(dims, type_='tuple', ket=False, Print=False):
 
-    l = len(circuit)
+    l = len(dims)
     state = [0]*l
     encoding = [ tuple(state) ]
-    last_state = array(circuit) - 1
+    last_state = array(dims) - 1
     while not array_equiv(encoding[-1], last_state) :
 
         look = -1
@@ -25,7 +25,7 @@ def encode_state(circuit, type_='tuple', Print=False):
         while not incrementable:   
             # this loop looks at each digit and changes it to the next
             # state 
-            incrementable = state[look] + 1 < circuit[look]
+            incrementable = state[look] + 1 < dims[look]
             if incrementable: 
                 state[look] += 1
             else:
@@ -38,6 +38,9 @@ def encode_state(circuit, type_='tuple', Print=False):
     if type_ == 'list': 
         for i in range(len(encoding)):
             encoding[i] = list(encoding[i])
+    if ket:
+        for i in range(len(encoding)):
+            encoding[i] = '|' + ''.join(map(str,encoding[i])) + '>'
 
     if Print == True:
         print(encoding)
@@ -56,52 +59,71 @@ def is_unitary(mat):
                 candidate[i,j] = sp.simplify( candidate[i,j] )
         result = array_equiv(identity(size, object), candidate)
     return result
-    
-def printout(mat, encoding = None, notes = None):
+
+def makelist(*args):
     """
-    This formats the matrix for human-readible inspection of the matrices
+    I can't find a way for this to work when there is only one input
     """
+
+    result = []
+    for arg in args:
+        if isinstance(arg, list): result.append(arg)
+        if isinstance(arg, int): result.append([arg])
     
-    fig, ax = subplots(figsize=(8,8))
-    mat_ax = ax.matshow(mat.astype(float), cmap='rainbow')
-    mat_ax.set_clim([-1,1])
-    # cbar.set_ticks = arange(-1,1,1/9) 
-    dim = int(mat.shape[0] - 1)
+    return tuple(result)
+
+def printout(gate, title_ = None):
+    """
+    This formats the truth tabel and matrix for human-readible inspection 
+    """
+    if title_ == None: title_ = gate.notes
     
-    if mat.dtype == object:
-        cbar = colorbar(mat_ax, ticks = arange(-1,1+1/dim,1/dim) ) 
+    # create a figure with 2 subplots for the matrix and truth table
+    fig, (mat_ax, tt_ax) = subplots(1, 2, figsize=(20,8)) #, constrained_layout=True)
+    
+    tt_ax.axis('off')
+    mat_ax.set_title('Matrix', size=18, pad = 30)
+    
+    # print matrix
+    if gate.mat is None: gate.mat = tt2mat(gate.tt)
+    
+    set_mat = mat_ax.matshow(gate.mat.astype(float), cmap='rainbow')
+    set_mat.set_clim(-1,1)
+    
+    if gate.mat.dtype == object:
+        dim = int(gate.mat.shape[0] - 1)
+        cbar = colorbar(set_mat, ax=mat_ax, ticks = arange(-1,1+1/dim,1/dim) )
         if dim > 10: cbar.ax.tick_params(rotation=90)
         generator = [r'$\frac{' + f"{i}" r'}{'
                      + str(dim) + r'}$'  for i in range(1,dim) ]
-        rev_generator = [ i[:1] + '-' +  i[1:] for i in reversed(generator) ] 
+        rev_generator = [ i[:1] + '-' +  i[1:] for i in reversed(generator) ]
         cbar_ticklabels = ['-1'] + rev_generator + ['0'] + generator + ['1']
         cbar.set_ticklabels(cbar_ticklabels)
-        
-        
-        # judge = empty([dim+1,dim+1])
-        # for i in range(dim+1):
-        #     for j in range(dim+1):
-        #         judge[i,j] = len((mat[i,j].simplify()).args) == 2
-                
-        # if any(judge):
-        # mat = mat.astype(float)
-        # mat = mat.round(4)
-
-    for (i, j), z in ndenumerate(mat):
-        ax.text(j, i, z, ha='center', va='center')
-        
-    if dim < 100 and encoding is not None:
-        ax.set_xticks(range(dim+1)) # input
-        ax.set_yticks(range(dim+1)) # output
-        ax.set_xticklabels(encoding, rotation=90)
-        ax.set_yticklabels(encoding)
+    else:
+        cbar = colorbar(set_mat, ax=mat_ax, ticks = arange(-1, 1, .5))
     
-    title(notes, pad = 50)
-    show()
+    for (i, j), z in ndenumerate(gate.mat):
+        mat_ax.text(j, i, z, ha='center', va='center')
     
-def get_location(circuit, code): 
+    # touch up matrix axis
+    mat_ax.tick_params(labelsize = 15)
+    cbar.ax.tick_params(labelsize = 15)
+    if dim < 100:
+        mat_ax.set_xticks(range(dim+1)) # input
+        mat_ax.set_yticks(range(dim+1)) # output
+        mat_ax.set_xticklabels(encode_state(gate.dims, ket=True), rotation=90)
+        mat_ax.set_yticklabels(encode_state(gate.dims, ket=True))
+    
+    # print truth table
+    tt_ax.text(0, .93, 'Truth Table', size = 18)
+    tt_ax.text(0, .6, gate.stringify(), size = 14)
+    
+    fig.suptitle(title_, size=20, y=0.99) # pad = 50)
+    subplots_adjust(wspace = 0)
+    
+def get_location(dims, code): 
     """
-    e.g. circuit: [2, 2, 2]
+    e.g. dims: [2, 2, 2]
              code: [1, 0, 1]
      returns 5  
     """
@@ -111,27 +133,26 @@ def get_location(circuit, code):
     elif isinstance(code, tuple): 
         code = list(code)
     
-    multipliers = [ int(prod(circuit[i:])) for i in range(1,len(circuit)+1) ]
+    multipliers = [ int(prod(dims[i:])) for i in range(1,len(dims)+1) ]
     sum_ = 0    
     for i, digit in enumerate(code): 
         sum_ += digit * multipliers[i]
     return sum_
 
-def get_encoding(circuit, location):
-    divisors = [ int(prod(circuit[i:])) for i in range(1,len(circuit)+1) ]
-    encoding = [0] * len(circuit)
-    for i in range(len(circuit)):
-        encoding[i] = int( floor(location/divisors[i]) % circuit[i] )
+def get_encoding(dims, location):
+    divisors = [ int(prod(dims[i:])) for i in range(1,len(dims)+1) ]
+    encoding = [0] * len(dims)
+    for i in range(len(dims)):
+        encoding[i] = int( floor(location/divisors[i]) % dims[i] )
     return encoding
 
-
-            
 class truth_table:
-    def __init__(self, circuit, type_):
+    def __init__(self, dims, type_):
         self.table = {}
-        self.circuit = circuit
-        self.size = int(prod(circuit))
+        self.dims = dims
+        self.size = int(prod(dims))
         self.type = type_
+        self.mat  = None
         
     def perm_io(self, in_code, out_code):
         """
@@ -149,20 +170,19 @@ class truth_table:
         if self.diffuse: return
         return dict(map(reverse, tt.items() ))
 
-        
 class gate:
     def __init__(self, tt, notes='A gate'):
         self.tt = tt
-        self.circuit = tt.circuit
+        self.table = tt.table
+        self.dims = tt.dims
         self.notes = notes
         self.size = tt.size
         self.mat = None
-        
 
 class perm_gate(gate):
     def __init__(self, tt, notes='A perm gate'):
         gate.__init__(self, tt, notes)
-        
+    
     def apply(self, state):
         """
         This method accepts a state object, which has a dict of 
@@ -181,6 +201,18 @@ class perm_gate(gate):
                 state[out_basis] = state.pop(in_basis)
         
         return state
+    
+    def stringify(self):
+        """
+        Human-readable format of the truth table
+        """
+        fmt_items = []
+        for key, val in self.table.items():
+            key_str = '|' + ''.join(map(str, key)) + '>'
+            val_str = '|' + ''.join(map(str, val)) + '>'
+            fmt_items.append( key_str + ' \u2192 ' + val_str + '\n')
+            
+        return ''.join(fmt_items)
 
 class diff_gate(gate):
     """
@@ -189,6 +221,7 @@ class diff_gate(gate):
     """
     def __init__(self, tt, notes='A diffusion gate'):
         gate.__init__(self, tt, notes)
+        self.mat = tt.mat
         
     def apply(self, state):
         """
@@ -197,8 +230,6 @@ class diff_gate(gate):
         amplitudes, adding the amplitudes to a state vector. After all the
         adding, the nonzero elements of the state vector get re-encoded back 
         into basis : amp dictionarys
-        Using indx, it only looks at the basis digits 
-
         """
         #empty state vector
         vector = zeros(self.size, object)
@@ -206,36 +237,61 @@ class diff_gate(gate):
         for in_basis, in_amp in list(state.items()):
             # account for single qudit gates
             if not isinstance(in_basis, tuple): in_basis = (in_basis,)
-
+            
             out_pairs = self.tt.table.get(in_basis)
             out_bases = [ pair[0] for pair in out_pairs ]
             out_amps  = [ pair[1] * in_amp for pair in out_pairs ]
             out_amps  = [ sp.simplify(i) for i in out_amps ]  
-            out_locs  = [ get_location(self.circuit, code) for code in out_bases ]
+            out_locs  = [ get_location(self.dims, code) for code in out_bases ]
             for loc, amp in zip(out_locs, out_amps):
                 vector[loc] += amp
         out_state = {}
         for loc, amp in enumerate(vector):
             if amp == 0: continue
-            basis = get_encoding(self.circuit, loc)
+            basis = get_encoding(self.dims, loc)
             out_state[ tuple(basis) ] = amp
         return out_state
     
+    def stringify(self):
+        """
+        Returns human-readable format of truth table object
+        """
+        fmt_items = []
+        for in_basis, outs in self.table.items():
+            in_str = '|' + ''.join(map(str, in_basis)) + '>'
+            output_str = ''
+            for count, (basis, amp) in enumerate(outs.items()):
+                if count != 0: output_str += ' + '
+                basis = '|' + ''.join(map(str, basis)) + '>'
+                amp = str(amp)
+                output_str += amp + basis
+            
+            fmt_items.append( in_str + ' \u2192 ' + output_str + '\n')
+        
+        return ''.join(fmt_items)
+
 def tt2mat(tt):
     """
     This only works on permutation matrices.
     """
-    if tt.type != 'perm':
-        print('tt2mat() only accepts permutation truth tables')
-        return
+    if tt.type == 'perm':
+        mat = identity(tt.size, uint8)
+        for in_code, out_code in tt.table.items():
+            in_loc = get_location(tt.dims, in_code)
+            out_loc = get_location(tt.dims, out_code)
+            mat[in_loc, in_loc ] = 0
+            mat[out_loc, in_loc] = 1
     
-    mat = identity(tt.size, dtype = uint8)
-    for in_code, out_code in tt.table.items():
-        in_loc = get_location(tt.circuit, out_code)
-        out_loc = get_location(tt.circuit, in_code)
-        mat[in_loc, in_loc ] = 0
-        mat[out_loc, in_loc] = 1
-
+    if tt.type == 'diff':
+        mat = identity(tt.size, object)
+        for in_code, out_table in tt.table.items():
+            in_loc = get_location(tt.dims, in_code)
+            mat[ in_loc, in_loc ] = 0
+            for basis, amp in out_table.items():
+                out_loc = get_location(tt.dims, basis)
+                mat[ out_loc, in_loc ] = amp
+                print(mat)
+    
     return mat
 
 def mat2tt(mat):
@@ -257,9 +313,13 @@ def mat2tt(mat):
     for i in range(dim):
         in_code = encoding[i]
         out_amps = mat[:,i]
-        out_codes = [ ((j,), amp) for j, amp in enumerate(out_amps) ]
+        out_codes = [ ((j,), amp) for j, amp in enumerate(out_amps) if amp != 0]
         tt.table[in_code] = tuple(out_codes)
     
+    # search for redundant entries
+    [ tt.table.pop(key) 
+     for key, val in list(tt.table.items()) if key == val[0][0] and val[0][1] == 1 ]
+        
     return tt
 
 def fan_out(dim, control, target, Print=False):
@@ -273,8 +333,8 @@ def fan_out(dim, control, target, Print=False):
     """
     target = [target]
     size = len(target) + 1
-    circuit = [dim] * size
-    tt = truth_table(circuit, 'perm')
+    dims = [dim] * size
+    tt = truth_table(dims, 'perm')
     
     for i in range(1, dim):
         in_code = array([0]*size)
@@ -286,21 +346,21 @@ def fan_out(dim, control, target, Print=False):
     
     return perm_gate(tt, notes='Fan out gate')
 
-def arith(circuit, control, target, op='add', Print=False):
+def arith(dims, control, target, op='add', Print=False):
     """
     This gate adds the controls together and then either performs modular 
     addition or subtract with the target
     """
     
-    tt = truth_table(circuit, 'perm')
-    encoding = encode_state(circuit)
+    tt = truth_table(dims, 'perm')
+    encoding = encode_state(dims)
     control_sum = []
     for code in encoding:
         control_sum.append(sum(code[control]))
         
     if op == 'add':
         for i, in_code in enumerate(encoding):
-            sum_ = sum(in_code[target] + control_sum[i] ) % circuit[target]
+            sum_ = sum(in_code[target] + control_sum[i] ) % dims[target]
             out_code = list( in_code )
             out_code[target] = sum_
             tt.table[in_code] = tuple(out_code)
@@ -310,12 +370,12 @@ def arith(circuit, control, target, op='add', Print=False):
         # subtract is the inverse of add
         # consider arith( add ) and then invert the dictionary
         
-        subtract = arith(circuit, control, target, mode = 'add', Print=Print)
+        subtract = arith(dims, control, target, mode = 'add', Print=Print)
         subtract_table = subtract.tt.invert_table()
         subtract.tt.table = subtract_table
         result = subtract
         # for i, in_code in enumerate(encoding):
-        #     diff_ = sum(in_code[target] - control_sum[i] ) % circuit[target]
+        #     diff_ = sum(in_code[target] - control_sum[i] ) % dims[target]
         #     out_code = list( in_code )
         #     out_code[target] = diff_
         #     tt.table[in_code] = tuple(out_code)
@@ -391,17 +451,17 @@ def goto_state(n, send=1, Print=False):
         printout(result, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
     
     tt = mat2tt(result)
-    notes = 'Size ' + str(n) + ', send '+ str(send) + ' goto_state gate'
+    notes = 'Size ' + str(n) + ', \u2192'+ str(send) + ' Goto-state gate'
     return diff_gate(tt, notes)
 
 def AND(control, target):
     """
-    expecting controls and qutrits and target as bit
+    expecting controls and target as qubits
     control & target are the indexes
     """
     len_ = len(control + [target])
-    circuit = array([2]*len_)
-    tt = truth_table(circuit, 'perm')
+    dims = array([2]*len_)
+    tt = truth_table(dims, 'perm')
     out_code = (1,) * len_
     in_code = list(out_code)
     in_code[target] = 0
@@ -417,10 +477,10 @@ def OR(control, target):
     as AND()
     """
     len_ = len(control + [target])
-    circuit = array([2]*len_)
+    dims = array([2]*len_)
     
-    tt = truth_table(circuit, 'perm')
-    encoding = encode_state(circuit[control])
+    tt = truth_table(dims, 'perm')
+    encoding = encode_state(dims[control])
     
     for control_in in encoding:
         if not any(control_in): 
@@ -441,14 +501,70 @@ def copy32(control, target):
     onto a target qubit
     control and target give the indices 
     """
-    circuit = [3]*2
-    circuit[target] = 2
-    tt = truth_table(circuit, 'perm')
-    tt.perm_io( (2,0), (2,1) )
+    dims = [3]*2
+    dims[target] = 2
+    tt = truth_table(dims, 'perm')
+    in_ = [0,0]
+    in_[control] = 2
+    out = [1,1]
+    out[control] = 2
+    tt.perm_io( tuple(in_), tuple(out) )
     
-    return perm_gate(tt, notes='Copy 32 from here')
+    return perm_gate(tt, notes='Copy 32')
     
+def create_control(dims, control, target, directions):
+    """
+    Creates a control gate. Contol and Target give indices.
+    Directions is a dictionary pairing of control basis states and
+    operations on the target(s)
+    """
+    control, target = makelist( control, target )
+    if any([isinstance(val, diff_gate) for val in directions.values() ]):
+        type_ = 'diff'
+        notes = 'Diffusions control gate'
+    else:
+        type_ = 'perm'
+        notes = 'Permutation control gate'
+    
+    tt = truth_table(dims, type_)
+    
+    if type_ == 'diff':
+        for ctl, gate in directions.items():
+            for in_, out in gate.table.items():
+                extend_in = list(in_)
+                [ extend_in.insert(i, ctl[j]) for j, i in enumerate(control) ]
+                extend_out = {}
+                for pair in out:
+                    extend_basis = list(pair[0])
+                    [ extend_basis.insert(i, ctl[j])
+                     for j, i in enumerate(control) ]
+                    extend_basis = tuple(extend_basis)
+                    extend_out[ extend_basis ] = pair[1]
+                    extend_in = tuple(extend_in)
+                tt.table[ extend_in ] = extend_out
+        result = diff_gate(tt, notes)
+    
+    if type_ == 'perm':
+        for ctl, target_tt in directions.items():
+            for in_, out in target_tt.items():
+                extend_in = list(in_)
+                extend_out = list(out_)
+                for j, i in enumerate(control):
+                    extend_in.insert(i, ctl[j])
+                    extend_out.insert(i, ctl[j])
+                    tt.perm_io( extend_in, extend_out )
+        result = perm_gate(tt, notes)
+        
+    return result
+
 if __name__ == '__main__':
     
     # import q_program
-    printout(goto_state(4).tt.mat)
+    gt1 = goto_state(3)
+    gt2 = goto_state(3, 2)
+    
+    directions = { (1,) : gt1, (2,) : gt2 }
+    
+    gt3 = create_control([3,3], 0, 1, directions)
+    
+    printout(gt3, title_ = 'Title')
