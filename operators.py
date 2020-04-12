@@ -216,8 +216,8 @@ class perm_gate(gate):
 
 class diff_gate(gate):
     """
-    Note that every diff_gate() object gets passed a truth table that is the
-    same size as the corresponding matrix.
+    Note that every diff_gate() object gets passed a truth table that is not
+    necessarily the same size as the corresponding matrix.
     """
     def __init__(self, tt, notes='A diffusion gate'):
         gate.__init__(self, tt, notes)
@@ -229,7 +229,7 @@ class diff_gate(gate):
         { basis : amplitude } items. It transforms each basis into a list of 
         amplitudes, adding the amplitudes to a state vector. After all the
         adding, the nonzero elements of the state vector get re-encoded back 
-        into basis : amp dictionarys
+        into { basis : amp } state objects
         """
         #empty state vector
         vector = zeros(self.size, object)
@@ -260,6 +260,37 @@ class diff_gate(gate):
         for in_basis, outs in self.table.items():
             in_str = '|' + ''.join(map(str, in_basis)) + '>'
             output_str = ''
+            for count, pair in enumerate(outs):
+                if count != 0: output_str += ' + '
+                basis = '|' + ''.join(map(str, pair[0])) + '>'
+                amp = str(pair[1])
+                output_str += amp + basis
+            
+            fmt_items.append( in_str + ' \u2192 ' + output_str + '\n')
+        
+        return ''.join(fmt_items)
+
+class control_gate(gate):
+    def __init__(self, which, tt, notes = 'A control gate'):
+        """
+        which should be a perm_gate or diff_gate object
+        """
+        gate.__init__(self, tt, notes)
+        
+        if which == diff_gate: 
+            self.gate_type = diff_gate(tt, notes)
+        if which == perm_gate:
+            self.gate_type = perm_gate(tt, notes)
+            
+    def stringify(self):
+        """
+        Returns human-readable format of truth table object
+        """
+        fmt_items = []
+        print('stringify')
+        for in_basis, outs in self.table.items():
+            in_str = '|' + ''.join(map(str, in_basis)) + '>'
+            output_str = ''
             for count, (basis, amp) in enumerate(outs.items()):
                 if count != 0: output_str += ' + '
                 basis = '|' + ''.join(map(str, basis)) + '>'
@@ -269,6 +300,9 @@ class diff_gate(gate):
             fmt_items.append( in_str + ' \u2192 ' + output_str + '\n')
         
         return ''.join(fmt_items)
+    
+    def apply(self, state):
+        return self.gate_type.apply(state)
 
 def tt2mat(tt):
     """
@@ -290,7 +324,6 @@ def tt2mat(tt):
             for basis, amp in out_table.items():
                 out_loc = get_location(tt.dims, basis)
                 mat[ out_loc, in_loc ] = amp
-                print(mat)
     
     return mat
 
@@ -521,10 +554,12 @@ def create_control(dims, control, target, directions):
     control, target = makelist( control, target )
     if any([isinstance(val, diff_gate) for val in directions.values() ]):
         type_ = 'diff'
-        notes = 'Diffusions control gate'
+        notes = 'Diffusion control gate'
+        parent = diff_gate
     else:
         type_ = 'perm'
         notes = 'Permutation control gate'
+        parent = perm_gate
     
     tt = truth_table(dims, type_)
     
@@ -542,7 +577,6 @@ def create_control(dims, control, target, directions):
                     extend_out[ extend_basis ] = pair[1]
                     extend_in = tuple(extend_in)
                 tt.table[ extend_in ] = extend_out
-        result = diff_gate(tt, notes)
     
     if type_ == 'perm':
         for ctl, target_tt in directions.items():
@@ -553,18 +587,9 @@ def create_control(dims, control, target, directions):
                     extend_in.insert(i, ctl[j])
                     extend_out.insert(i, ctl[j])
                     tt.perm_io( extend_in, extend_out )
-        result = perm_gate(tt, notes)
         
-    return result
+    return control_gate(parent, tt, notes)
 
 if __name__ == '__main__':
     
-    # import q_program
-    gt1 = goto_state(3)
-    gt2 = goto_state(3, 2)
-    
-    directions = { (1,) : gt1, (2,) : gt2 }
-    
-    gt3 = create_control([3,3], 0, 1, directions)
-    
-    printout(gt3, title_ = 'Title')
+    import q_program
