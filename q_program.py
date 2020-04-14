@@ -14,6 +14,7 @@ from numpy import *
 import matplotlib.pyplot as plt
 import copy
 
+null  = '\u2205'
 
 def indexer(lst, *indices):
     return (lst[i] for i in indices)
@@ -125,6 +126,7 @@ class quantum_circuit:
         # printing settings
         if name: self.name = '\"' + name + '\"'
         self.show_amp = show_amp
+        self.encodings = []
         
         # calculation attributes
         self.dims = array(dims)
@@ -136,11 +138,10 @@ class quantum_circuit:
         if len(self.divisions) > 1: self.divisions.pop()
         self.halt = False
         
-        # the state starts initialized to all 0, this can be changed by 
-        # the write_state() method
+        # initialize state
         self.state = { (0,) * self.length : 1 }
         
-        print('Creating quantum circuit ', self.name, ':')
+        print('Creating quantum circuit' + self.name + ':')
         print(self.dims, ' with size ' + str(self.size) )
     
     def write_state(self, *state):
@@ -148,7 +149,6 @@ class quantum_circuit:
         Accepts strings like '0101' and converts them to dict objects.
         State should be a dict object with { basis : amplitude } pairs.
         """
-        
         # clear state reversibly
         temp = self.state
         self.state = {}
@@ -175,7 +175,21 @@ class quantum_circuit:
         
         lets_sort.sort(key=lambda entry: entry[2])
         
-        return [ (a, b) for a, b, _ in lets_sort ] 
+        return [ (a, b) for a, b, _ in lets_sort ]
+    
+    def special_encoding(self, scheme, *indx):
+        if scheme == 'null':
+            swap_dict =  { 0: null, 1:'T', 2:'F'}
+        elif scheme == 'TF':
+            swap_dict = { 0: 'T', 1: 'F'}
+        elif isinstance(scheme, dict):
+            swap_dict = scheme
+        else:
+            print('Scheme error')
+            return
+        
+        [ self.encodings.append( (i, swap_dict) ) for i in indx ]
+    
     def printout(self, show_amp=False):
         disp_objs = []
         for basis, amp in self.order_state():
@@ -183,7 +197,12 @@ class quantum_circuit:
             # insert ; for divisioning modules
             basis =  list(basis)
             [ basis.insert(i+j,';') for i,j in enumerate(self.divisions) ]
+            # form a string
             state_str =  ''.join([str(i) for i in basis])
+            # modify string with special encodings
+            for indx, swap_dict in self.encodings:
+                state_str[indx] = swap_dict.get(int(state_str[indx]))
+            
             if show_amp:
                 shown_amp = str(amp)
             else: 
@@ -200,6 +219,7 @@ class quantum_circuit:
         output_str = ''.join([s for s in together])
         
         print(output_str)
+        
     def run(self, Print=False, show_amp=False):
         """
         Checks for the proper conditions, then applies each gate in order,
@@ -235,11 +255,11 @@ class quantum_circuit:
                 self.state = instruct.integrate(self.state)
                 
             print('\nState ' + instruct.num + ':')
-            self.printout(show_amp)
+            self.printout(self.show_amp)
         
         if not self.halt:
             print(dividor, '\nFinal State:')
-            self.printout(show_amp)
+            self.printout(self.show_amp)
         
     def add_instruct(self, gate, indx):
         self.depth += 1
@@ -286,6 +306,7 @@ class mat_quantum_circuit(quantum_circuit):
         Creates a matrix equivalent to the (gate + index)
         Calls add_instruct() in the parent function, passing gate, indx and mat
         """
+        print('adding matrix instruct' + gate.notes)
         # do we need matrix integration?
         if len(indx) == len(self.dims):
             if gate.mat is None: gate.mat = ops.tt2mat(gate.tt)
@@ -422,21 +443,26 @@ def test_control_ops():
     
     qc.run(show_amp=True)
     
-def test_integrate():
+def test_idea():
     
-    n = 3
-    qc = mat_quantum_circuit([2,n,5], name='Test integrate')
-    
-    b = ops.branch(n)
+    qc = mat_quantum_circuit([3,3,2,2,2,2], divisions = [2,3,1],
+        name='Test integrate', show_amp=False)
+    qc.special_encoding('null', 0,1)
+    qc.special_encoding('TF', 2,3,4)
+                        
+    b = ops.branch(3)
+    qc.add_instruct( b , [0])
     qc.add_instruct( b , [1])
     
-    b5 = ops.branch(5)
-    qc.add_instruct( b5, [2])
+    c32 = ops.copy32(0,1)
+    n32 = ops.not32(0,1)
     
-    c32 = ops.copy32(1,0)
-    qc.add_instruct( c32, [0, 1])
+    qc.add_instruct( c32, [0, 2])
+    qc.add_instruct( c32, [1, 3])
     
-    qc.run(show_amp=True)
+    qc.add_instruct( n32, [1, 4])
+    
+    qc.run()
     
     
     
@@ -445,4 +471,5 @@ def test_integrate():
 # test_logic()
 # test_matrix_check()
 # test_control_ops()
-test_integrate()
+# test_integrate()
+test_idea()

@@ -10,7 +10,11 @@ from numpy import *
 from matplotlib.pyplot import *
 import sympy as sp
 
-# sp.init_printing(use_unicode=True)
+# global unicode characters
+
+check = '\u2714'
+arrow = '\u2192'
+
 
 def encode_state(dims, type_='tuple', ket=False, Print=False):
 
@@ -215,7 +219,7 @@ class perm_gate(gate):
         for key, val in self.table.items():
             key_str = '|' + ''.join(map(str, key)) + '>'
             val_str = '|' + ''.join(map(str, val)) + '>'
-            fmt_items.append( key_str + ' \u2192 ' + val_str + '\n')
+            fmt_items.append( key_str + arrow + val_str + '\n')
             
         return ''.join(fmt_items)
 
@@ -271,7 +275,7 @@ class diff_gate(gate):
                 amp = str(pair[1])
                 output_str += amp + basis
             
-            fmt_items.append( in_str + ' \u2192 ' + output_str + '\n')
+            fmt_items.append( in_str + arrow + output_str + '\n')
         
         return ''.join(fmt_items)
 
@@ -297,7 +301,7 @@ class control_gate(gate):
                 amp = str(amp)
                 output_str += amp + basis
             
-            fmt_items.append( in_str + ' \u2192 ' + output_str + '\n')
+            fmt_items.append( in_str + arrow + output_str + '\n')
         
         return ''.join(fmt_items)
     
@@ -485,7 +489,7 @@ def goto_state(n, send=1, Print=False):
     
     tt = mat2tt(result)
     
-    notes = 'Size ' + str(n) + ', \u2192'+ str(send) + ' Goto-state gate'
+    notes = 'Size ' + str(n) + ', ' + arrow + str(send) + ' Goto-state gate'
     return diff_gate(tt, notes)
 
 def AND(control, target):
@@ -558,6 +562,8 @@ def not32(control, target):
     out = [0,0]
     out[control] = 2
     tt.perm_io( tuple(in_), tuple(out) )
+    
+    return perm_gate(tt, notes='Not-Copy 32')
     
 def create_control(dims, control, target, directions):
     """
