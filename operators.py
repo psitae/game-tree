@@ -90,15 +90,15 @@ def printout(gate, title_ = None):
     set_mat = mat_ax.matshow(gate.mat.astype(float), cmap='rainbow')
     set_mat.set_clim(-1,1)
     
+    dim = int(gate.mat.shape[0] - 1)
     if gate.mat.dtype == object:
-        dim = int(gate.mat.shape[0] - 1)
         cbar = colorbar(set_mat, ax=mat_ax, ticks = arange(-1,1+1/dim,1/dim) )
-        if dim > 10: cbar.ax.tick_params(rotation=90)
-        generator = [r'$\frac{' + f"{i}" r'}{'
-                     + str(dim) + r'}$'  for i in range(1,dim) ]
-        rev_generator = [ i[:1] + '-' +  i[1:] for i in reversed(generator) ]
-        cbar_ticklabels = ['-1'] + rev_generator + ['0'] + generator + ['1']
-        cbar.set_ticklabels(cbar_ticklabels)
+        # if dim > 10: cbar.ax.tick_params(rotation=90)
+        # generator = [r'$\frac{' + f"{i}" r'}{'
+        #              + str(dim) + r'}$'  for i in range(1,dim) ]
+        # rev_generator = [ i[:1] + '-' +  i[1:] for i in reversed(generator) ]
+        # cbar_ticklabels = ['-1'] + rev_generator + ['0'] + generator + ['1']
+        # cbar.set_ticklabels(cbar_ticklabels)
     else:
         cbar = colorbar(set_mat, ax=mat_ax, ticks = arange(-1, 1, .5))
     
@@ -147,27 +147,32 @@ def get_encoding(dims, location):
     return encoding
 
 class truth_table:
-    def __init__(self, dims, type_):
+    def __init__(self, dims):
         self.table = {}
         self.dims = dims
         self.size = int(prod(dims))
-        self.type = type_
         self.mat  = None
+
+class d_truth_table(truth_table):
+    def __init__(self, dims):
+        truth_table.__init__(self, dims)
+        
+class p_truth_table(truth_table):
+    def __init__(self, dims):
+        truth_table.__init__(self, dims)
         
     def perm_io(self, in_code, out_code):
         """
         Only works for permutation tables
         """
         
-        if self.type == 'diffuse': return
         self.table[in_code] = out_code
         self.table[out_code] = in_code
     
     def invert_table(self):
         """"
-        This only works with 1-1 tables
+        This only works with perm tables
         """
-        if self.diffuse: return
         return dict(map(reverse, tt.items() ))
 
 class gate:
@@ -276,18 +281,13 @@ class control_gate(gate):
         which should be a perm_gate or diff_gate object
         """
         gate.__init__(self, tt, notes)
+        self.internal_gate = which(tt, notes)
         
-        if which == diff_gate: 
-            self.gate_type = diff_gate(tt, notes)
-        if which == perm_gate:
-            self.gate_type = perm_gate(tt, notes)
-            
     def stringify(self):
         """
         Returns human-readable format of truth table object
         """
         fmt_items = []
-        print('stringify')
         for in_basis, outs in self.table.items():
             in_str = '|' + ''.join(map(str, in_basis)) + '>'
             output_str = ''
@@ -302,21 +302,13 @@ class control_gate(gate):
         return ''.join(fmt_items)
     
     def apply(self, state):
-        return self.gate_type.apply(state)
+        return self.internal_gate.apply(state)
 
 def tt2mat(tt):
     """
-    This only works on permutation matrices.
+    Truth table to matrix 
     """
-    if tt.type == 'perm':
-        mat = identity(tt.size, uint8)
-        for in_code, out_code in tt.table.items():
-            in_loc = get_location(tt.dims, in_code)
-            out_loc = get_location(tt.dims, out_code)
-            mat[in_loc, in_loc ] = 0
-            mat[out_loc, in_loc] = 1
-    
-    if tt.type == 'diff':
+    if isinstance(tt, d_truth_table):
         mat = identity(tt.size, object)
         for in_code, out_table in tt.table.items():
             in_loc = get_location(tt.dims, in_code)
@@ -324,6 +316,14 @@ def tt2mat(tt):
             for basis, amp in out_table.items():
                 out_loc = get_location(tt.dims, basis)
                 mat[ out_loc, in_loc ] = amp
+    
+    if isinstance(tt, p_truth_table):
+        mat = identity(tt.size, uint8)
+        for in_code, out_code in tt.table.items():
+            in_loc = get_location(tt.dims, in_code)
+            out_loc = get_location(tt.dims, out_code)
+            mat[in_loc, in_loc ] = 0
+            mat[out_loc, in_loc] = 1
     
     return mat
 
@@ -334,13 +334,13 @@ def mat2tt(mat):
     and values as
     ( (|0>, amp00), (|1>, amp01), ... ), 
     ( (|0>, amp10), (|1>, amp11), ... ), ...
-    saves the matrix in tt.mat
+     and saves the matrix in tt.mat
     
     This function currently only works on single-qudit operations
     """
     dim = mat.shape[0]
     encoding = encode_state([dim])
-    tt = truth_table([dim], 'diffuse')
+    tt = d_truth_table([dim])
     tt.mat = mat
     
     for i in range(dim):
@@ -367,7 +367,7 @@ def fan_out(dim, control, target, Print=False):
     target = [target]
     size = len(target) + 1
     dims = [dim] * size
-    tt = truth_table(dims, 'perm')
+    tt = p_truth_table(dims)
     
     for i in range(1, dim):
         in_code = array([0]*size)
@@ -385,7 +385,7 @@ def arith(dims, control, target, op='add', Print=False):
     addition or subtract with the target
     """
     
-    tt = truth_table(dims, 'perm')
+    tt = p_truth_table(dims)
     encoding = encode_state(dims)
     control_sum = []
     for code in encoding:
@@ -484,6 +484,7 @@ def goto_state(n, send=1, Print=False):
         printout(result, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
     
     tt = mat2tt(result)
+    
     notes = 'Size ' + str(n) + ', \u2192'+ str(send) + ' Goto-state gate'
     return diff_gate(tt, notes)
 
@@ -494,7 +495,7 @@ def AND(control, target):
     """
     len_ = len(control + [target])
     dims = array([2]*len_)
-    tt = truth_table(dims, 'perm')
+    tt = p_truth_table(dims)
     out_code = (1,) * len_
     in_code = list(out_code)
     in_code[target] = 0
@@ -512,7 +513,7 @@ def OR(control, target):
     len_ = len(control + [target])
     dims = array([2]*len_)
     
-    tt = truth_table(dims, 'perm')
+    tt = p_truth_table(dims)
     encoding = encode_state(dims[control])
     
     for control_in in encoding:
@@ -536,7 +537,7 @@ def copy32(control, target):
     """
     dims = [3]*2
     dims[target] = 2
-    tt = truth_table(dims, 'perm')
+    tt = p_truth_table(dims)
     in_ = [0,0]
     in_[control] = 2
     out = [1,1]
@@ -544,6 +545,19 @@ def copy32(control, target):
     tt.perm_io( tuple(in_), tuple(out) )
     
     return perm_gate(tt, notes='Copy 32')
+
+def not32(control, target):
+    """ 
+    Copy32() + NOT gate
+    """
+    dims = [3]*2
+    dims[target] = 2
+    tt = p_truth_table(dims)
+    in_ = [1,1]
+    in_[control] = 2
+    out = [0,0]
+    out[control] = 2
+    tt.perm_io( tuple(in_), tuple(out) )
     
 def create_control(dims, control, target, directions):
     """
@@ -553,17 +567,15 @@ def create_control(dims, control, target, directions):
     """
     control, target = makelist( control, target )
     if any([isinstance(val, diff_gate) for val in directions.values() ]):
-        type_ = 'diff'
+        tt = d_truth_table(dims)
         notes = 'Diffusion control gate'
         parent = diff_gate
     else:
-        type_ = 'perm'
+        tt = p_truth_table(dims)
         notes = 'Permutation control gate'
         parent = perm_gate
     
-    tt = truth_table(dims, type_)
-    
-    if type_ == 'diff':
+    if isinstance(tt, d_truth_table):
         for ctl, gate in directions.items():
             for in_, out in gate.table.items():
                 extend_in = list(in_)
@@ -578,7 +590,7 @@ def create_control(dims, control, target, directions):
                     extend_in = tuple(extend_in)
                 tt.table[ extend_in ] = extend_out
     
-    if type_ == 'perm':
+    if isinstance(tt, p_truth_table):
         for ctl, target_tt in directions.items():
             for in_, out in target_tt.items():
                 extend_in = list(in_)
