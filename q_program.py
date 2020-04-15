@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import copy
 
 null  = '\u2205'
+check = '\u2714'
 
 def indexer(lst, *indices):
     return (lst[i] for i in indices)
@@ -38,7 +39,6 @@ class instruction:
         self.num  = str(num)
     
     def integrate(self, state, halt=None):
-        
         collect = {}
         for full_basis, amp in state.items():
             sub_basis = tuple([ full_basis[i] for i in self.indx ])
@@ -87,7 +87,7 @@ class mat_instruction(instruction):
         # normal integration methods with truth tables
         qc.state = super().integrate(qc.state)
         
-        # display uber matrix visually, unitary or not
+        # displax full matrix visually, unitary or not
         ax = plt.matshow(self.mat.astype(float), cmap='rainbow')
         cbar = plt.colorbar( ticks = [] )
         ax.set_clim(-1, 1)
@@ -95,7 +95,8 @@ class mat_instruction(instruction):
         
         if self.is_unitary:
             # perform update of column
-            print('\nMatrix implementation: Unitary Operation \u2714')
+            print('\nMatrix implementation checks:')
+            print('Unitary Operation:\t' + check)
             unsimp = self.mat @ qc.column                    #  ✔
             qc.column = [ sp.simplify(i) for i in unsimp ] 
             
@@ -103,28 +104,33 @@ class mat_instruction(instruction):
             title_ = 'Gate ' + self.num + ':\n' + self.gate.notes
             ops.printout(self.gate, title_ )
             
-            # print out state 
-            print('Matrix State: ' + self.num)
-            qc.col2state(qc.show_amp)
+            # compare state 
+            qc.col2state()
+            
             
         else:
             print(error_dividor, 'Non-unitary operation')
             qc.halt = True
-        
-        
         
 
 class quantum_circuit:
     """
     The main object in the algorithm.
     """
+    # class variables
+    
+    dividor = '\n' + '='*50
+    error_dividor = '\n' + 'X'*50 + '\n'
     
     def __init__(self, dims, divisions = [], name=False, show_amp=False):
         """
         Divisions is a list of the sizes of each division, it will be cum-added
         """
         # printing settings
-        if name: self.name = '\"' + name + '\"'
+        if name: 
+            self.name = '\"' + name + '\"'
+        else:
+            self.name = r'"A quantum circuit"'
         self.show_amp = show_amp
         self.encodings = []
         
@@ -141,7 +147,7 @@ class quantum_circuit:
         # initialize state
         self.state = { (0,) * self.length : 1 }
         
-        print('Creating quantum circuit' + self.name + ':')
+        print('Creating quantum circuit ' + self.name + ':')
         print(self.dims, ' with size ' + str(self.size) )
     
     def write_state(self, *state):
@@ -154,14 +160,14 @@ class quantum_circuit:
         self.state = {}
         
         norm = 1/sp.sqrt(len(state))
-        for s in state:
-            if len(s) != self.length:
+        for st in state:
+            if len(st) != self.length:
                 print('Improper state assignment')
                 self.halt = True
                 self.state = temp
                 return
             
-            basis = tuple([ int(num) for num in s ])
+            basis = tuple([ int(num) for num in st ])
             self.state[basis] =  norm 
             
     def order_state(self):
@@ -179,31 +185,33 @@ class quantum_circuit:
     
     def special_encoding(self, scheme, *indx):
         if scheme == 'null':
-            swap_dict =  { 0: null, 1:'T', 2:'F'}
+            swap_dict =  { 0: null, 1:'F', 2:'T'}
         elif scheme == 'TF':
-            swap_dict = { 0: 'T', 1: 'F'}
+            swap_dict = { 0: 'F', 1: 'T'}
         elif isinstance(scheme, dict):
             swap_dict = scheme
         else:
             print('Scheme error')
+            self.halt = True
             return
         
         [ self.encodings.append( (i, swap_dict) ) for i in indx ]
     
-    def printout(self, show_amp=False):
+    def printout(self):
         disp_objs = []
         for basis, amp in self.order_state():
-            
-            # insert ; for divisioning modules
             basis =  list(basis)
-            [ basis.insert(i+j,';') for i,j in enumerate(self.divisions) ]
-            # form a string
-            state_str =  ''.join([str(i) for i in basis])
             # modify string with special encodings
             for indx, swap_dict in self.encodings:
-                state_str[indx] = swap_dict.get(int(state_str[indx]))
+                basis[indx] = swap_dict.get(basis[indx])
             
-            if show_amp:
+            # insert ; for divisioning modules
+            [ basis.insert(i+j,';') for i,j in enumerate(self.divisions) ]
+
+            # form a string
+            state_str =  ''.join([str(i) for i in basis])
+            
+            if self.show_amp:
                 shown_amp = str(amp)
             else: 
                 shown_amp = ''
@@ -220,32 +228,30 @@ class quantum_circuit:
         
         print(output_str)
         
-    def run(self, Print=False, show_amp=False):
+    def run(self):
         """
         Checks for the proper conditions, then applies each gate in order,
         printing each state as the program progresses.
         """
-        dividor = '\n' + '='*50
-        error_dividor = '\n' + 'X'*50 + '\n'
         
         # Are we really ready to run the circuit?
         if self.halt:
-            print(error_dividor, 'Halted')
+            print(quantum_circuit.error_dividor, 'Halted')
             return
         
         if self.depth == 0:
-            print(error_dividor, 'No operations to apply')
+            print(quantum_circuit.error_dividor, 'No operations to apply')
             return
         
-        print(dividor)
-        print('Running quantum circuit', self.name)
-        print('Initial state: \t')
-        self.printout(show_amp)
+        print(quantum_circuit.dividor)
+        print('Running quantum circuit ' + self.name + ':\n')
+        print('Initial state:')
+        self.printout()
         
         for instruct in self.gate_set:
             print('\n' + '_'*50+ '\n')
             print('Instruction ' + instruct.num + '\n' + '-'*20)
-            print( instruct.gate.notes, ' acting on qudit(s) ', instruct.indx)
+            print( instruct.gate.notes + ' acting on qudit(s)', instruct.indx)
 
             # a little bit of oop ugliness
             if isinstance(self, mat_quantum_circuit):
@@ -255,17 +261,36 @@ class quantum_circuit:
                 self.state = instruct.integrate(self.state)
                 
             print('\nState ' + instruct.num + ':')
-            self.printout(self.show_amp)
+            self.printout()
         
         if not self.halt:
-            print(dividor, '\nFinal State:')
-            self.printout(self.show_amp)
+            print(quantum_circuit.dividor)
+            print('\nFinal State:')
+            self.printout()
         
     def add_instruct(self, gate, indx):
+        # check validity
+        self.validate_instruct(gate, indx)
+        
         self.depth += 1
         instruct = instruction(gate, indx, self.depth)
         self.gate_set.append(instruct)
         
+    def validate_instruct(self, gate, indx):
+        """
+        Checks to see if the gate + indx jives with the circuit dimensions
+        Return bool determining quantum_circuit.halt
+        """
+        # too many indices for gate dims?
+        if len(gate.dims) == len(indx):
+            # all indices point to gate dims that match the quantum circuit?
+            if all([ self.dims[i] == gate.dims[j] for j, i in enumerate(indx)]):
+                self.halt = False
+                return
+        print(quantum_circuit.error_dividor)
+        print('Invalid instruct')
+        self.halt = True
+    
 class mat_quantum_circuit(quantum_circuit):
     
     def __init__(self, dims, divisions = [], name=False, show_amp=False):
@@ -285,7 +310,10 @@ class mat_quantum_circuit(quantum_circuit):
         state vector and store it in self.column
         """
         
-        super(mat_quantum_circuit, self).write_state(state)
+        super(mat_quantum_circuit, self).write_state(*state)
+        
+        # clear state
+        self.column = zeros(self.size, object)
         
         # assuming equal superposition of all input state strings
         norm = 1/sp.sqrt(len(state))
@@ -296,6 +324,7 @@ class mat_quantum_circuit(quantum_circuit):
             # check validity of input
             if len(st) > self.length:
                 print('\nState too long to specify')
+                self.halt = True
                 return
             
             state_locations.append(ops.get_location(self.dims, st))
@@ -306,69 +335,42 @@ class mat_quantum_circuit(quantum_circuit):
         Creates a matrix equivalent to the (gate + index)
         Calls add_instruct() in the parent function, passing gate, indx and mat
         """
-        print('adding matrix instruct' + gate.notes)
+        
+        # check validity
+        self.validate_instruct(gate, indx)
+            
         # do we need matrix integration?
         if len(indx) == len(self.dims):
             if gate.mat is None: gate.mat = ops.tt2mat(gate.tt)
-            uber = gate.mat
+            mat = gate.mat
         else:
-            # set up repetitions
-            rest_circ = list(self.dims)
-            for num, idx in enumerate(indx):
-                rest_circ.pop(idx - num)
-            rest_encoding = ops.encode_state(rest_circ, type_='list')
-            full_encoding = ops.encode_state(self.dims, type_='list')
+            mat = gate.matrix_integration(self.dims, indx)
             
-            # matrix integration
-            # diffuse gates
-            if isinstance(gate, ops.diff_gate):
-                uber = identity(self.size, object)
-                for in_basis, out_pairs in gate.tt.table.items():
-                    for code in rest_encoding:
-                        full_in_code = copy.copy(code)
-                        [ full_in_code.insert(i, in_basis[j]) for j, i in enumerate(indx)]
-                        in_loc = full_encoding.index(full_in_code)
-                        uber[ in_loc, in_loc ] = 0
-                        for pair in out_pairs:
-                            full_out_code = copy.copy(code)
-                            [ full_out_code.insert(i, pair[0][j])
-                             for j, i in enumerate(indx) ]
-                            out_loc = full_encoding.index(full_out_code)
-                            uber[out_loc, in_loc] = pair[1]
-            
-            # perm gates
-            elif isinstance(gate, ops.perm_gate):
-                uber = identity(self.size, uint8)
-                for in_basis, out_basis in gate.tt.table.items():
-                    for code in rest_encoding:
-                        full_in_code = copy.copy(code)
-                        full_out_code = copy.copy(code)
-                        for j, i in enumerate(indx):
-                            full_in_code.insert(i, in_basis[j])
-                            full_out_code.insert(i, out_basis[j])
-                        in_loc = full_encoding.index(full_in_code)
-                        out_loc = full_encoding.index(full_out_code)
-                        uber[ in_loc, in_loc ] = 0
-                        uber[ out_loc, in_loc ] = 1
-        
-        uni = ops.is_unitary(uber)
+        uni = ops.is_unitary(mat)
         self.depth += 1
-        instruct = mat_instruction(gate, indx, self.depth, uber, uni)
+        instruct = mat_instruction(gate, indx, self.depth, mat, uni)
         self.gate_set.append(instruct)
-        # super(mat_quantum_circuit, self).add_instruct(gate, indx, uber, uni, Print)
     
-    def col2state(self, show_amp):
+    def col2state(self):
         """
-        Convert the column object into a normal state object and prints
-        it out for comparison to self.state
+        Convert the column object into a normal state object and compare
+        with self.state
         """
-        temp = self.state
+
         col_state = { tuple(ops.get_encoding(self.dims, loc)) : amp 
                 for loc, amp in enumerate(self.column) if amp != 0 }
         
-        self.state = col_state
-        self.printout(show_amp)
-        self.state = temp
+        if self.state == col_state:
+            print('State argreement: \t' + check)
+        else:
+            print(quantum_circuit.error_dividor)
+            print('Matrix state does not agree. Halting.')
+            temp = self.state
+            self.state = col_state
+            print('Matrix state:')
+            self.printout()
+            self.state = temp
+            self.halt = True
 
 def test_fan_out():
     qc = mat_quantum_circuit([2,2,2], divisions = [], name='Test fan out')
@@ -384,12 +386,10 @@ def test_diffusion():
     qc.write_state('00', '10', '20', '30')
     
     gate1 = ops.goto_state(4, send=1)
-    instruct = instruction(gate1, [0])
-    qc.add_instruct(instruct)
+    qc.add_instruct(gate1, [0])
     
     gate2 = ops.branch(4)
-    instruct = instruction(gate2, [1])
-    qc.add_instruct(instruct)
+    qc.add_instruct(gate2, [1])
     
     qc.run()
     
@@ -413,8 +413,8 @@ def test_logic():
     OR = ops.OR([0,1], 2)
     qc2.add_instruct( OR, [2, 3, 4] )
     
-    qc.run(True)
-    qc2.run(True)
+    qc.run()
+    qc2.run()
 
 def test_matrix_check():
     qc = mat_quantum_circuit([2,3,2], name='Test matrix check')
@@ -424,32 +424,28 @@ def test_matrix_check():
     g2 = ops.goto_state(3)
     qc.add_instruct( g2, [1] )
     
-    qc.run(show_amp=True)
+    qc.run()
     
 def test_control_ops():
-    qc = mat_quantum_circuit([3,3], name='Test control operations')
+    qc = mat_quantum_circuit([3,3], name='Test control operations', show_amp=True)
+    qc.write_state('11', '12', '21', '22')
     
-    b = ops.branch(3)
-    qc.add_instruct( b, [0])
-    qc.add_instruct( b, [1])
-    
-    go1 = ops.goto_state(3)
-    go2 = ops.goto_state(3, 2)
-    
+    go1 = ops.goto_state(3, send=1)
+    go2 = ops.goto_state(3, send=2)
     directions = { (1,) : go1, (2,) : go2 }
     
     ctl_go = ops.create_control([3,3], 0, 1, directions)
-    qc.add_instruct(ctl_go, [0, 1])
+    qc.add_instruct(ctl_go, [0,1])
     
-    qc.run(show_amp=True)
+    qc.run()
     
 def test_idea():
     
-    qc = mat_quantum_circuit([3,3,2,2,2,2], divisions = [2,3,1],
+    qc = quantum_circuit([3,3,2,2,2,2,2,2], divisions = [2,3,3],
         name='Test integrate', show_amp=False)
     qc.special_encoding('null', 0,1)
     qc.special_encoding('TF', 2,3,4)
-                        
+    
     b = ops.branch(3)
     qc.add_instruct( b , [0])
     qc.add_instruct( b , [1])
@@ -458,18 +454,45 @@ def test_idea():
     n32 = ops.not32(0,1)
     
     qc.add_instruct( c32, [0, 2])
-    qc.add_instruct( c32, [1, 3])
+    qc.add_instruct( c32, [1, 4])
+    qc.add_instruct( n32, [0, 3])
     
-    qc.add_instruct( n32, [1, 4])
+    fan = ops.fan_out(2, 0, 1)
+    OR = ops.OR([0,1], 2)
+    AND = ops.AND([0,1], 2)
+    qc.add_instruct(fan, [2, 5] )
+    qc.add_instruct(OR, [3, 4, 6] )
+    qc.add_instruct(AND, [5, 6, 7] )
+    # now everything is evaluated
+    
+    # reset q5 and q6, use as goto control
+    qc.add_instruct( fan, [2, 5] )
+    qc.add_instruct(OR, [3, 4, 6] )
+    
+    # control the continue ancilla @5 with eval @7
+    qc.add_instruct( ops.gates('tonc'), [5,7] )
+    
+    qc.run()
+    
+def test_special_encoding():
+    qc = quantum_circuit([3,2,2], divisions = [1,1,1])
+    qc.special_encoding('null', 0)
+    qc.special_encoding('TF', 1)
+    
+    h2 = ops.gates('hadamard')
+    b3 = ops.branch(3)
+    
+    qc.add_instruct( h2, [1])
+    qc.add_instruct( b3, [0])
     
     qc.run()
     
     
     
-    
-    
+# test_diffusion()
 # test_logic()
 # test_matrix_check()
 # test_control_ops()
 # test_integrate()
 test_idea()
+# test_special_encoding()

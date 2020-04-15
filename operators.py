@@ -7,14 +7,51 @@ Created on Fri Apr  3 10:24:38 2020
 """
 
 from numpy import *
+from numpy import copy as numcopy
 from matplotlib.pyplot import *
 import sympy as sp
+import copy
+from math import log
 
 # global unicode characters
 
-check = '\u2714'
 arrow = '\u2192'
 
+def gates(name, dim=2):
+    two = identity(2)
+    
+    if name == 'not':
+        tt = p_truth_table([2])
+        tt.perm_io( 0, 1)
+        return perm_gate(tt, notes='Not Gate')
+    
+    if name == 'cnot':
+        tt = p_truth_table([2,2])
+        tt.perm_io( (1,1), (1,0) )
+        return perm_gate(tt, notes='CNot Gate')
+    
+    if name =='tonc':
+        tt = p_truth_table([2,2])
+        tt.perm_io( (1,1), (0,1) )
+        return perm_gate(tt, notes='Reverse CNot gate')
+    
+    if name == 'ccnot':
+        tt = p_truth_table([2,2,2])
+        tt.perm_io( (1,1,1), (1,1,0) )
+        return perm_gate(tt, notes='CCNot Gate')
+    
+    if name == 'hadamard':
+        # produced hadamard matrix (dim * dim)
+        # dim must be a power of two
+        exponent = int( log(dim, 2) )
+        h2 = array([[1,1],[1,-1]], object)
+        mat = 1
+        for _ in range(exponent):
+            mat = kron(mat, h2)
+        
+        prefactor = 1/sp.sqrt(dim)
+        tt = mat2tt( prefactor * mat )
+        return diff_gate(tt, notes='N=' + str(dim) + ' Hadamard')
 
 def encode_state(dims, type_='tuple', ket=False, Print=False):
 
@@ -134,8 +171,10 @@ def get_location(dims, code):
     # improve this
     if isinstance(code, int):
         code = [code]
-    elif isinstance(code, tuple): 
+    elif isinstance(code, tuple):
         code = list(code)
+    elif isinstance(code, str):
+        code = [ int(char) for char in code ]
     
     multipliers = [ int(prod(dims[i:])) for i in range(1,len(dims)+1) ]
     sum_ = 0    
@@ -211,6 +250,29 @@ class perm_gate(gate):
         
         return state
     
+    def matrix_integration(self, circ_dims, indx):
+        # set up repetitions
+        rest_circ = list(circ_dims)
+        for num, i in enumerate(indx):
+            rest_circ.pop(i - num)
+            
+        rest_encoding = encode_state(rest_circ, type_='list')
+        full_encoding = encode_state(circ_dims, type_='list')
+        
+        mat = identity(prod(circ_dims), uint8)
+        for in_basis, out_basis in self.table.items():
+            for code in rest_encoding:
+                full_in_code = copy.copy(code)
+                full_out_code = copy.copy(code)
+                for j, i in enumerate(indx):
+                    full_in_code.insert(i, in_basis[j])
+                    full_out_code.insert(i, out_basis[j])
+                in_loc = full_encoding.index(full_in_code)
+                out_loc = full_encoding.index(full_out_code)
+                mat[ in_loc, in_loc ] = 0
+                mat[ out_loc, in_loc ] = 1
+        return mat
+    
     def stringify(self):
         """
         Human-readable format of the truth table
@@ -247,19 +309,40 @@ class diff_gate(gate):
             # account for single qudit gates
             if not isinstance(in_basis, tuple): in_basis = (in_basis,)
             
-            out_pairs = self.tt.table.get(in_basis)
-            out_bases = [ pair[0] for pair in out_pairs ]
-            out_amps  = [ pair[1] * in_amp for pair in out_pairs ]
-            out_amps  = [ sp.simplify(i) for i in out_amps ]  
-            out_locs  = [ get_location(self.dims, code) for code in out_bases ]
-            for loc, amp in zip(out_locs, out_amps):
-                vector[loc] += amp
-        out_state = {}
+            out_dict = self.table.get(  in_basis, {(in_basis, 1)}  )
+            for out_basis, out_amp in out_dict.items():
+                loc = get_location(self.dims, out_basis) 
+                vector[loc] += sp.simplify( out_amp * in_amp )
+        state = {}
         for loc, amp in enumerate(vector):
             if amp == 0: continue
             basis = get_encoding(self.dims, loc)
-            out_state[ tuple(basis) ] = amp
-        return out_state
+            state[ tuple(basis) ] = amp
+        return state
+    
+    def matrix_integration(self, circ_dims, indx):
+        # set up repetitions
+        rest_circ = list(circ_dims)
+        for num, i in enumerate(indx):
+            rest_circ.pop(i - num)
+        
+        rest_encoding = encode_state(rest_circ, type_='list')
+        full_encoding = encode_state(circ_dims, type_='list')
+        
+        mat = identity(prod(circ_dims), object)
+        for in_basis, out_pairs in self.table.items():
+            for code in rest_encoding:
+                full_in_code = copy.copy(code)
+                [ full_in_code.insert(i, in_basis[j]) for j, i in enumerate(indx)]
+                in_loc = full_encoding.index(full_in_code)
+                mat[ in_loc, in_loc ] = 0
+                for pair in out_pairs:
+                    full_out_code = copy.copy(code)
+                    [ full_out_code.insert(i, pair[0][j])
+                     for j, i in enumerate(indx) ]
+                    out_loc = full_encoding.index(full_out_code)
+                    mat[out_loc, in_loc] = pair[1]
+        return mat
     
     def stringify(self):
         """
@@ -336,8 +419,8 @@ def mat2tt(mat):
     This function creates a truth table with keys as
     |0>,|1>, ...
     and values as
-    ( (|0>, amp00), (|1>, amp01), ... ), 
-    ( (|0>, amp10), (|1>, amp11), ... ), ...
+    { |0>:amp00, |1>:amp01 , ... }, 
+    { |0>:amp10, |1>:amp11, ... }, ...
      and saves the matrix in tt.mat
     
     This function currently only works on single-qudit operations
@@ -351,17 +434,19 @@ def mat2tt(mat):
         in_code = encoding[i]
         out_amps = mat[:,i]
         out_codes = [ ((j,), amp) for j, amp in enumerate(out_amps) if amp != 0]
-        tt.table[in_code] = tuple(out_codes)
+        tt.table[in_code] = dict(out_codes)
     
-    # search for redundant entries
-    [ tt.table.pop(key) 
-     for key, val in list(tt.table.items()) if key == val[0][0] and val[0][1] == 1 ]
+    # search for redundant entries like |00> --> |00>
+    for in_basis, out_dict in list(tt.table.items()):
+        for out_basis, amp in out_dict.items():
+            if in_basis == out_basis and amp == 1:
+                tt.table.pop(in_basis)
         
     return tt
 
 def fan_out(dim, control, target, Print=False):
     """
-    This changes the basis for each amplitued, so it is a permutation gate.
+    This changes the basis for each amplitude, so it is a permutation gate.
     It accepts the dimension of the two qudits, and their locations. It copies
     the basis value of the control onto the target.
     If everything is working properly, it will only ever copy the basis value
@@ -525,7 +610,7 @@ def OR(control, target):
             continue
         in_code = list(control_in)
         in_code.insert(target, 0)
-        out_code = copy(in_code)
+        out_code = numcopy(in_code)
         out_code[target] = 1
         in_code = tuple(in_code)
         out_code = tuple(out_code)
@@ -557,10 +642,9 @@ def not32(control, target):
     dims = [3]*2
     dims[target] = 2
     tt = p_truth_table(dims)
-    in_ = [1,1]
-    in_[control] = 2
-    out = [0,0]
-    out[control] = 2
+    in_ = [0,0]
+    in_[control] = 1
+    out = [1,1]
     tt.perm_io( tuple(in_), tuple(out) )
     
     return perm_gate(tt, notes='Not-Copy 32')
@@ -583,16 +667,15 @@ def create_control(dims, control, target, directions):
     
     if isinstance(tt, d_truth_table):
         for ctl, gate in directions.items():
-            for in_, out in gate.table.items():
+            for in_, out_dict in gate.table.items():
                 extend_in = list(in_)
                 [ extend_in.insert(i, ctl[j]) for j, i in enumerate(control) ]
                 extend_out = {}
-                for pair in out:
-                    extend_basis = list(pair[0])
-                    [ extend_basis.insert(i, ctl[j])
-                     for j, i in enumerate(control) ]
+                for out_basis, out_amp in out_dict.items():
+                    extend_basis = list(out_basis)
+                    [ extend_basis.insert(i, ctl[j]) for j, i in enumerate(control) ]
                     extend_basis = tuple(extend_basis)
-                    extend_out[ extend_basis ] = pair[1]
+                    extend_out[ extend_basis ] = out_amp
                     extend_in = tuple(extend_in)
                 tt.table[ extend_in ] = extend_out
     
@@ -610,4 +693,12 @@ def create_control(dims, control, target, directions):
 
 if __name__ == '__main__':
     
-    import q_program
+    # import q_program
+    go1 = goto_state(3, send=1)
+    go2 = goto_state(3, send=2)
+    directions = { (1,) : go1, (2,) : go2 }
+    
+    ctl_go = create_control([3,3], 0, 1, directions)
+    ctl_go.apply({(1,1):1})
+
+    printout(ctl_go)
