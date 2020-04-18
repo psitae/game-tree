@@ -196,11 +196,15 @@ def get_location(dims, code):
         sum_ += digit * multipliers[i]
     return sum_
 
-def get_encoding(dims, location):
+def get_encoding(dims, location, type_='list'):
     divisors = [ int(prod(dims[i:])) for i in range(1,len(dims)+1) ]
     encoding = [0] * len(dims)
     for i in range(len(dims)):
         encoding[i] = int( floor(location/divisors[i]) % dims[i] )
+    
+    if type_ == 'tuple':
+        encoding = tuple(encoding)
+        
     return encoding
 
 class truth_table:
@@ -237,7 +241,27 @@ class gate:
         self.notes = notes
         self.size = tt.size
         self.mat = None
-
+    
+    def change_dims(self, new_dims):
+        """
+        This allows a gate to apply to different dimensions of qubits 
+        as long as the product of the dimensions remains the same
+        """
+        
+        if prod(new_dims) != self.size:
+            print('Change dimension error')
+            return
+        
+        # redo truth table encodings
+        self.substitute_encoding(new_dims)
+        
+        # update gate dimensions
+        self.dims = new_dims
+    
+    def substitute_encoding():
+        print('Wrong substitute encoding')
+        return
+    
 class perm_gate(gate):
     def __init__(self, tt, notes='A perm gate'):
         gate.__init__(self, tt, notes)
@@ -295,7 +319,10 @@ class perm_gate(gate):
             fmt_items.append( key_str + arrow + val_str + '\n')
             
         return ''.join(fmt_items)
-
+    
+    def substitute_encoding(self, new_encoding):
+        pass
+    
 class diff_gate(gate):
     """
     Note that every diff_gate() object gets passed a truth table that is not
@@ -372,7 +399,20 @@ class diff_gate(gate):
             fmt_items.append( in_str + arrow + output_str + '\n')
         
         return ''.join(fmt_items)
-
+    
+    def substitute_encoding(self, new_dims):
+        new_table = {}
+        for in_basis, out_dict in self.table.items():
+            in_loc = get_location(self.dims, in_basis)
+            new_in = get_encoding(new_dims, in_loc, 'tuple')
+            new_out_dict = {}
+            for out_basis, out_amp in out_dict.items():
+                out_loc = get_location(self.dims, out_basis)
+                new_out = get_encoding(new_dims, out_loc, 'tuple')
+                new_out_dict[ new_out ] = out_amp
+            new_table[ new_in ] = new_out_dict
+        self.table = new_table
+    
 class control_gate(gate):
     def __init__(self, which, tt, notes = 'A control gate'):
         """
@@ -592,7 +632,7 @@ def goto_state(n, send=1, Print=False):
     notes = 'Size ' + str(n) + ', ' + arrow + str(send) + ' Goto-state gate'
     return diff_gate(tt, notes)
 
-def AND(control, target):
+def AND(control=[0,1], target=2):
     """
     expecting controls and target as qubits
     control & target are the indexes
@@ -610,7 +650,7 @@ def AND(control, target):
     
     return perm_gate(tt, notes='AND gate')
 
-def OR(control, target):
+def OR(control=[0,1], target=2):
     """
     as AND()
     """
@@ -715,4 +755,5 @@ if __name__ == '__main__':
     
     # import q_program
     gate = one_shot_grover()
+    gate.change_dims([2,2])
     printout(gate)

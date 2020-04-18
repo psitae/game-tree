@@ -273,6 +273,7 @@ class quantum_circuit:
         self.printout()
         
         for instruct in self.gate_set:
+            if self.halt: break
             print('\n' + '_'*50+ '\n')
             print('Instruction ' + instruct.num + '\n' + '-'*20)
             print( instruct.gate.notes + ' acting on qudit(s)', instruct.indx)
@@ -496,32 +497,26 @@ def test_idea():
     qc.add_instruct( fan, [2, 5] )
     qc.add_instruct(OR, [3, 4, 6] )
     
-    directions = { (1,): ops.gates('not') }
-    ctrl = ops.create_control([3,2], 0, 1, directions)
-    flip_branch = qc.add_instruct(ctrl, [0,5] )
+    directions = { (2,1): ops.gates('not') }
+    ctrl = ops.create_control([3,2,2], [0,1], 2, directions)
+    flip_branch = qc.add_instruct(ctrl, [0,7,5] )
 
-    qc.run()
+    qc.run('only_final')
     qc.index_aide()
     
-def test_special_encoding():
-    qc = quantum_circuit([3,2,2], divisions = [1,1,1])
-    qc.special_encoding('null', 0)
-    qc.special_encoding('TF', 1)
+def test_grover():
+    qc = quanutm_circuit([4,2], divisions=[1,1], name='Test grover')
+    qc.special_encoding( {'0':'(FF)', '1':'(FT)', '2':'(TF)', '3':'(TT)'}, 0)
     
-    h2 = ops.gates('hadamard')
-    b3 = ops.branch(3)
-    
-    qc.add_instruct( h2, [1])
-    qc.add_instruct( b3, [0])
-    
-    qc.run()
-    
-    
+    had4 = ops.gates('hadamard', 4)
+    qc.add_instruct(had4, [0])
+    AND = ops.AND([0,1],2)
+    AND.change_dims([4,2])
     
 # test_diffusion()
 # test_logic()
 # test_matrix_check()
 # test_control_ops()
 # test_special_encoding()
-test_idea()
+# test_idea()
 
