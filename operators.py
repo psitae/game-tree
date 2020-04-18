@@ -109,7 +109,21 @@ def makelist(*args):
     result = []
     for arg in args:
         if isinstance(arg, list): result.append(arg)
-        if isinstance(arg, int): result.append([arg])
+        elif isinstance(arg, tuple): result.append(list(arg))
+        elif isinstance(arg, int): result.append([arg])
+    
+    return tuple(result)
+
+def maketuple(*args):
+    """
+    I can't find a way for this to work when there is only one input
+    """
+
+    result = []
+    for arg in args:
+        if isinstance(arg, list): result.append(tuple(arg))
+        elif isinstance(arg, int): result.append((arg,))
+        elif isinstance(arg, ndarray): result.append(tuple(arg))
     
     return tuple(result)
 
@@ -205,10 +219,7 @@ class p_truth_table(truth_table):
         truth_table.__init__(self, dims)
         
     def perm_io(self, in_code, out_code):
-        """
-        Only works for permutation tables
-        """
-        
+        in_code, out_code = maketuple(in_code, out_code)
         self.table[in_code] = out_code
         self.table[out_code] = in_code
     
@@ -309,7 +320,7 @@ class diff_gate(gate):
             # account for single qudit gates
             if not isinstance(in_basis, tuple): in_basis = (in_basis,)
             
-            out_dict = self.table.get(  in_basis, {(in_basis, 1)}  )
+            out_dict = self.table.get(  in_basis, {in_basis: 1}  )
             for out_basis, out_amp in out_dict.items():
                 loc = get_location(self.dims, out_basis) 
                 vector[loc] += sp.simplify( out_amp * in_amp )
@@ -330,18 +341,18 @@ class diff_gate(gate):
         full_encoding = encode_state(circ_dims, type_='list')
         
         mat = identity(prod(circ_dims), object)
-        for in_basis, out_pairs in self.table.items():
+        for in_basis, out_dict in self.table.items():
             for code in rest_encoding:
                 full_in_code = copy.copy(code)
                 [ full_in_code.insert(i, in_basis[j]) for j, i in enumerate(indx)]
                 in_loc = full_encoding.index(full_in_code)
                 mat[ in_loc, in_loc ] = 0
-                for pair in out_pairs:
+                for basis, amp in out_dict.items():
                     full_out_code = copy.copy(code)
-                    [ full_out_code.insert(i, pair[0][j])
+                    [ full_out_code.insert(i, basis[j])
                      for j, i in enumerate(indx) ]
                     out_loc = full_encoding.index(full_out_code)
-                    mat[out_loc, in_loc] = pair[1]
+                    mat[out_loc, in_loc] = amp
         return mat
     
     def stringify(self):
@@ -349,13 +360,13 @@ class diff_gate(gate):
         Returns human-readable format of truth table object
         """
         fmt_items = []
-        for in_basis, outs in self.table.items():
+        for in_basis, out_dict in self.table.items():
             in_str = '|' + ''.join(map(str, in_basis)) + '>'
             output_str = ''
-            for count, pair in enumerate(outs):
+            for count, (basis, amp) in enumerate(out_dict.items()):
                 if count != 0: output_str += ' + '
-                basis = '|' + ''.join(map(str, pair[0])) + '>'
-                amp = str(pair[1])
+                basis = '|' + ''.join(map(str, basis)) + '>'
+                amp = str(amp)
                 output_str += amp + basis
             
             fmt_items.append( in_str + arrow + output_str + '\n')
@@ -371,25 +382,29 @@ class control_gate(gate):
         self.internal_gate = which(tt, notes)
         
     def stringify(self):
-        """
-        Returns human-readable format of truth table object
-        """
-        fmt_items = []
-        for in_basis, outs in self.table.items():
-            in_str = '|' + ''.join(map(str, in_basis)) + '>'
-            output_str = ''
-            for count, (basis, amp) in enumerate(outs.items()):
-                if count != 0: output_str += ' + '
-                basis = '|' + ''.join(map(str, basis)) + '>'
-                amp = str(amp)
-                output_str += amp + basis
+        return self.internal_gate.stringify()
+    #     """
+    #     Returns human-readable format of truth table object
+    #     """
+    #     fmt_items = []
+    #     for in_basis, outs in self.table.items():
+    #         in_str = '|' + ''.join(map(str, in_basis)) + '>'
+    #         output_str = ''
+    #         for count, (basis, amp) in enumerate(outs.items()):
+    #             if count != 0: output_str += ' + '
+    #             basis = '|' + ''.join(map(str, basis)) + '>'
+    #             amp = str(amp)
+    #             output_str += amp + basis
             
-            fmt_items.append( in_str + arrow + output_str + '\n')
+    #         fmt_items.append( in_str + arrow + output_str + '\n')
         
-        return ''.join(fmt_items)
+    #     return ''.join(fmt_items)
     
     def apply(self, state):
         return self.internal_gate.apply(state)
+    
+    def matrix_integration(self, circ_dims, indx):
+        return self.internal_gate.matrix_integration(circ_dims, indx)
 
 def tt2mat(tt):
     """
@@ -612,8 +627,6 @@ def OR(control, target):
         in_code.insert(target, 0)
         out_code = numcopy(in_code)
         out_code[target] = 1
-        in_code = tuple(in_code)
-        out_code = tuple(out_code)
         tt.perm_io(in_code, out_code)
     
     return perm_gate(tt, notes='OR gate')
@@ -631,7 +644,7 @@ def copy32(control, target):
     in_[control] = 2
     out = [1,1]
     out[control] = 2
-    tt.perm_io( tuple(in_), tuple(out) )
+    tt.perm_io( in_, out )
     
     return perm_gate(tt, notes='Copy 32')
 
@@ -645,7 +658,7 @@ def not32(control, target):
     in_ = [0,0]
     in_[control] = 1
     out = [1,1]
-    tt.perm_io( tuple(in_), tuple(out) )
+    tt.perm_io( in_, out )
     
     return perm_gate(tt, notes='Not-Copy 32')
     
@@ -680,10 +693,9 @@ def create_control(dims, control, target, directions):
                 tt.table[ extend_in ] = extend_out
     
     if isinstance(tt, p_truth_table):
-        for ctl, target_tt in directions.items():
-            for in_, out in target_tt.items():
-                extend_in = list(in_)
-                extend_out = list(out_)
+        for ctl, gate in directions.items():
+            for in_, out in gate.table.items():
+                extend_in, extend_out = makelist(in_,out)
                 for j, i in enumerate(control):
                     extend_in.insert(i, ctl[j])
                     extend_out.insert(i, ctl[j])
@@ -691,14 +703,16 @@ def create_control(dims, control, target, directions):
         
     return control_gate(parent, tt, notes)
 
+def one_shot_grover():
+    s = ones(4, object) * sp.Rational(1,2)
+    mat = 2*outer(s,s) - identity(4, object)
+    tt = mat2tt(mat)
+    
+    return diff_gate(tt, notes='One shot grover')
+    
+    
 if __name__ == '__main__':
     
     # import q_program
-    go1 = goto_state(3, send=1)
-    go2 = goto_state(3, send=2)
-    directions = { (1,) : go1, (2,) : go2 }
-    
-    ctl_go = create_control([3,3], 0, 1, directions)
-    ctl_go.apply({(1,1):1})
-
-    printout(ctl_go)
+    gate = one_shot_grover()
+    printout(gate)

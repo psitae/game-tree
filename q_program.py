@@ -66,8 +66,8 @@ class instruction:
                     add_to_state = tuple(full_basis)
                     # add amplitude to value in dict if it exists
                     present = state.get(add_to_state, 0)
-                    state[add_to_state] =  present +  amp * dummy_amp
-
+                    simp = sp.simplify(amp * dummy_amp)
+                    state[add_to_state] =  present + simp
         # remove zero amps if they exist
         [ state.pop(basis) for basis, amp in list(state.items()) if amp == 0 ]
         return state
@@ -99,6 +99,14 @@ class mat_instruction(instruction):
             print('Unitary Operation:\t' + check)
             unsimp = self.mat @ qc.column                    #  ✔
             qc.column = [ sp.simplify(i) for i in unsimp ] 
+            
+            # normalized state
+            norm = inner(qc.column, qc.column)
+            if norm == 1:
+                print('Normalized state: \t' + check)
+            else:
+                print('State not normalized. Halting')
+                qc.halt = True
             
             # display gate as matrix and truth table
             title_ = 'Gate ' + self.num + ':\n' + self.gate.notes
@@ -196,6 +204,22 @@ class quantum_circuit:
             return
         
         [ self.encodings.append( (i, swap_dict) ) for i in indx ]
+    
+    def index_aide(self):
+        """
+        Prints dims and related indices with dividors
+        """
+        fmt_dims = list(self.dims)
+        fmt_indx = list(range(self.length))
+        for i, j in enumerate(self.divisions):
+            fmt_indx.insert(i+j, ';')
+            fmt_dims.insert(i+j, ';')
+        
+        fmt_dims = [str(i) for i in fmt_dims ]
+        fmt_indx = [str(i) for i in fmt_indx ]
+        print('\n\nIndex Aide' + '\n---------')
+        print('Dims:\t' + ' '.join(fmt_dims))
+        print('Indx:\t' + ' '.join(fmt_indx))
     
     def printout(self):
         disp_objs = []
@@ -382,8 +406,8 @@ def test_fan_out():
     qc.run(Print=True, show_amp = True)
 
 def test_diffusion():
-    qc = quantum_circuit([4,4])
-    qc.write_state('00', '10', '20', '30')
+    qc = mat_quantum_circuit([4,4], show_amp=True)
+    qc.write_state('10', '20', '30')
     
     gate1 = ops.goto_state(4, send=1)
     qc.add_instruct(gate1, [0])
@@ -396,7 +420,7 @@ def test_diffusion():
 def test_logic():
     qc = mat_quantum_circuit([3,3,2,2,2], divisions=[2,2,1], name='Test AND')
     
-    b = ops.goto_state(3)
+    b = ops.branch(3)
     qc.add_instruct( b, [0] )
     qc.add_instruct( b, [1] )
     
@@ -414,6 +438,9 @@ def test_logic():
     qc2.add_instruct( OR, [2, 3, 4] )
     
     qc.run()
+    print('\n\n\n')
+    print('*'*80)
+    print('\n\n\n')
     qc2.run()
 
 def test_matrix_check():
@@ -427,8 +454,8 @@ def test_matrix_check():
     qc.run()
     
 def test_control_ops():
-    qc = mat_quantum_circuit([3,3], name='Test control operations', show_amp=True)
-    qc.write_state('11', '12', '21', '22')
+    qc = mat_quantum_circuit([3,3,2], name='Test control operations', show_amp=True)
+    qc.write_state('110', '120', '210', '220')
     
     go1 = ops.goto_state(3, send=1)
     go2 = ops.goto_state(3, send=2)
@@ -442,7 +469,7 @@ def test_control_ops():
 def test_idea():
     
     qc = quantum_circuit([3,3,2,2,2,2,2,2], divisions = [2,3,3],
-        name='Test integrate', show_amp=False)
+        name='Test idea', show_amp=False)
     qc.special_encoding('null', 0,1)
     qc.special_encoding('TF', 2,3,4)
     
@@ -469,10 +496,12 @@ def test_idea():
     qc.add_instruct( fan, [2, 5] )
     qc.add_instruct(OR, [3, 4, 6] )
     
-    # control the continue ancilla @5 with eval @7
-    qc.add_instruct( ops.gates('tonc'), [5,7] )
-    
+    directions = { (1,): ops.gates('not') }
+    ctrl = ops.create_control([3,2], 0, 1, directions)
+    flip_branch = qc.add_instruct(ctrl, [0,5] )
+
     qc.run()
+    qc.index_aide()
     
 def test_special_encoding():
     qc = quantum_circuit([3,2,2], divisions = [1,1,1])
@@ -493,6 +522,6 @@ def test_special_encoding():
 # test_logic()
 # test_matrix_check()
 # test_control_ops()
-# test_integrate()
-test_idea()
 # test_special_encoding()
+test_idea()
+
