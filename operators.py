@@ -320,8 +320,15 @@ class perm_gate(gate):
             
         return ''.join(fmt_items)
     
-    def substitute_encoding(self, new_encoding):
-        pass
+    def substitute_encoding(self, new_dims):
+        new_table = {}
+        for in_basis, out_basis in self.table.items():
+            in_loc  = get_location(self.dims, in_basis)
+            out_loc = get_location(self.dims, out_basis)
+            new_in  = get_encoding(new_dims, in_loc, 'tuple')
+            new_out = get_encoding(new_dims, out_loc, 'tuple')
+            new_table[ new_in ] = new_out
+        self.table = new_table
     
 class diff_gate(gate):
     """
@@ -754,6 +761,8 @@ def one_shot_grover():
 if __name__ == '__main__':
     
     # import q_program
-    gate = one_shot_grover()
-    gate.change_dims([2,2])
+    # gate = one_shot_grover()
+    # gate.change_dims([2,2])
+    gate = AND()
+    gate.change_dims([4,2])
     printout(gate)

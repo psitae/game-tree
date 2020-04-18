@@ -505,18 +505,22 @@ def test_idea():
     qc.index_aide()
     
 def test_grover():
-    qc = quanutm_circuit([4,2], divisions=[1,1], name='Test grover')
-    qc.special_encoding( {'0':'(FF)', '1':'(FT)', '2':'(TF)', '3':'(TT)'}, 0)
+    qc = mat_quantum_circuit([4,2], divisions=[1,1], name='Test grover')
+    # qc.special_encoding( {'0':'(FF)', '1':'(FT)', '2':'(TF)', '3':'(TT)'}, 0)
     
     had4 = ops.gates('hadamard', 4)
     qc.add_instruct(had4, [0])
-    AND = ops.AND([0,1],2)
+    
+    AND = ops.AND()
     AND.change_dims([4,2])
+    qc.add_instruct(AND, [0,1])
+    
+    qc.run()
     
 # test_diffusion()
 # test_logic()
 # test_matrix_check()
 # test_control_ops()
-# test_special_encoding()
 # test_idea()
+test_grover()
 
