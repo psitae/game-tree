@@ -18,27 +18,35 @@ from math import log
 arrow = '\u2192'
 
 def gates(name, dim=2):
-    two = identity(2)
-    
     if name == 'not':
         tt = p_truth_table([2])
         tt.perm_io( 0, 1)
-        return perm_gate(tt, notes='Not Gate')
+        return perm_gate(tt, name='Not Gate')
+    
+    if name == 'cz':
+        tt = d_truth_table([2,2])
+        tt.table[ (1,1) ] =  {(1,1): -1}
+        return diff_gate(tt, name='CZ gate')
+    
+    if name == 'flip':
+        tt = d_truth_table([2])
+        tt.table[ (1,) ] = { (1,): -1}
+        return diff_gate(tt, name='Flip gate')
     
     if name == 'cnot':
         tt = p_truth_table([2,2])
         tt.perm_io( (1,1), (1,0) )
-        return perm_gate(tt, notes='CNot Gate')
+        return perm_gate(tt, name='CNot Gate')
     
     if name =='tonc':
         tt = p_truth_table([2,2])
         tt.perm_io( (1,1), (0,1) )
-        return perm_gate(tt, notes='Reverse CNot gate')
+        return perm_gate(tt, name='Reverse CNot gate')
     
     if name == 'ccnot':
         tt = p_truth_table([2,2,2])
         tt.perm_io( (1,1,1), (1,1,0) )
-        return perm_gate(tt, notes='CCNot Gate')
+        return perm_gate(tt, name='CCNot Gate')
     
     if name == 'hadamard':
         # produced hadamard matrix (dim * dim)
@@ -51,7 +59,7 @@ def gates(name, dim=2):
         
         prefactor = 1/sp.sqrt(dim)
         tt = mat2tt( prefactor * mat )
-        return diff_gate(tt, notes='N=' + str(dim) + ' Hadamard')
+        return diff_gate(tt, name='N=' + str(dim) + ' Hadamard')
 
 def encode_state(dims, type_='tuple', ket=False, Print=False):
 
@@ -131,7 +139,7 @@ def printout(gate, title_ = None):
     """
     This formats the truth tabel and matrix for human-readible inspection 
     """
-    if title_ == None: title_ = gate.notes
+    if title_ == None: title_ = gate.name
     
     # create a figure with 2 subplots for the matrix and truth table
     fig, (mat_ax, tt_ax) = subplots(1, 2, figsize=(20,8)) #, constrained_layout=True)
@@ -234,11 +242,11 @@ class p_truth_table(truth_table):
         return dict(map(reverse, tt.items() ))
 
 class gate:
-    def __init__(self, tt, notes='A gate'):
+    def __init__(self, tt, name='A gate'):
         self.tt = tt
         self.table = tt.table
         self.dims = tt.dims
-        self.notes = notes
+        self.name = name
         self.size = tt.size
         self.mat = None
     
@@ -263,8 +271,8 @@ class gate:
         return
     
 class perm_gate(gate):
-    def __init__(self, tt, notes='A perm gate'):
-        gate.__init__(self, tt, notes)
+    def __init__(self, tt, name='A perm gate'):
+        gate.__init__(self, tt, name)
     
     def apply(self, state):
         """
@@ -278,7 +286,7 @@ class perm_gate(gate):
         #               don't change the iterate object
         for in_basis in list(state.keys()):
             # failing to find in_basis in the table will return in_basis
-            out_basis = self.tt.table.get(in_basis, in_basis)
+            out_basis = self.table.get(in_basis, in_basis)
             if out_basis is not in_basis:
                 # associated amplitude of in_basis with out_basis
                 state[out_basis] = state.pop(in_basis)
@@ -335,8 +343,8 @@ class diff_gate(gate):
     Note that every diff_gate() object gets passed a truth table that is not
     necessarily the same size as the corresponding matrix.
     """
-    def __init__(self, tt, notes='A diffusion gate'):
-        gate.__init__(self, tt, notes)
+    def __init__(self, tt, name='A diffusion gate'):
+        gate.__init__(self, tt, name)
         self.mat = tt.mat
         
     def apply(self, state):
@@ -421,12 +429,12 @@ class diff_gate(gate):
         self.table = new_table
     
 class control_gate(gate):
-    def __init__(self, which, tt, notes = 'A control gate'):
+    def __init__(self, which, tt, name = 'A control gate'):
         """
         which should be a perm_gate or diff_gate object
         """
-        gate.__init__(self, tt, notes)
-        self.internal_gate = which(tt, notes)
+        gate.__init__(self, tt, name)
+        self.internal_gate = which(tt, name)
         
     def stringify(self):
         return self.internal_gate.stringify()
@@ -528,7 +536,7 @@ def fan_out(dim, control, target, Print=False):
         tt.table[in_code] = out_code
         tt.table[out_code] = in_code
     
-    return perm_gate(tt, notes='Fan out gate')
+    return perm_gate(tt, name='Fan out gate')
 
 def arith(dims, control, target, op='add', Print=False):
     """
@@ -578,8 +586,8 @@ def branch(n, m=None):
     
     tt = mat2tt(D(n, m))
     
-    notes = 'Branching into first ' + str(m) + ' states'
-    return diff_gate(tt, notes)
+    name = 'Branching gate, n=' + str(n)
+    return diff_gate(tt, name)
     
 def D(n, m = None):
     """
@@ -632,12 +640,12 @@ def goto_state(n, send=1, Print=False):
     result[1:,1:] = mat
     
     if Print:
-        printout(result, encode_state([n]), notes='N=' + str(n) + ' Goto gate')
+        printout(result, encode_state([n]), name='N=' + str(n) + ' Goto gate')
     
     tt = mat2tt(result)
     
-    notes = 'Size ' + str(n) + ', ' + arrow + str(send) + ' Goto-state gate'
-    return diff_gate(tt, notes)
+    name = 'Size ' + str(n) + ', ' + arrow + str(send) + ' Goto-state gate'
+    return diff_gate(tt, name)
 
 def AND(control=[0,1], target=2):
     """
@@ -655,7 +663,7 @@ def AND(control=[0,1], target=2):
     tt.table[in_code] = out_code
     tt.table[out_code] = in_code
     
-    return perm_gate(tt, notes='AND gate')
+    return perm_gate(tt, name='AND gate')
 
 def OR(control=[0,1], target=2):
     """
@@ -676,7 +684,7 @@ def OR(control=[0,1], target=2):
         out_code[target] = 1
         tt.perm_io(in_code, out_code)
     
-    return perm_gate(tt, notes='OR gate')
+    return perm_gate(tt, name='OR gate')
     
 def copy32(control, target):
     """
@@ -693,7 +701,7 @@ def copy32(control, target):
     out[control] = 2
     tt.perm_io( in_, out )
     
-    return perm_gate(tt, notes='Copy 32')
+    return perm_gate(tt, name='Copy 32')
 
 def not32(control, target):
     """ 
@@ -707,7 +715,7 @@ def not32(control, target):
     out = [1,1]
     tt.perm_io( in_, out )
     
-    return perm_gate(tt, notes='Not-Copy 32')
+    return perm_gate(tt, name='Not-Copy 32')
     
 def create_control(dims, control, target, directions):
     """
@@ -718,11 +726,11 @@ def create_control(dims, control, target, directions):
     control, target = makelist( control, target )
     if any([isinstance(val, diff_gate) for val in directions.values() ]):
         tt = d_truth_table(dims)
-        notes = 'Diffusion control gate'
+        name = 'Diffusion control gate'
         parent = diff_gate
     else:
         tt = p_truth_table(dims)
-        notes = 'Permutation control gate'
+        name = 'Permutation control gate'
         parent = perm_gate
     
     if isinstance(tt, d_truth_table):
@@ -748,14 +756,14 @@ def create_control(dims, control, target, directions):
                     extend_out.insert(i, ctl[j])
                     tt.perm_io( extend_in, extend_out )
         
-    return control_gate(parent, tt, notes)
+    return control_gate(parent, tt, name)
 
 def one_shot_grover():
     s = ones(4, object) * sp.Rational(1,2)
     mat = 2*outer(s,s) - identity(4, object)
     tt = mat2tt(mat)
     
-    return diff_gate(tt, notes='One shot grover')
+    return diff_gate(tt, name='One shot grover')
     
     
 if __name__ == '__main__':
@@ -765,4 +773,5 @@ if __name__ == '__main__':
     # gate.change_dims([2,2])
     gate = AND()
     gate.change_dims([4,2])
-    printout(gate)
+    print(gate.apply({(3,0):1}))
+    # printout(gate)

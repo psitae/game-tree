@@ -109,7 +109,7 @@ class mat_instruction(instruction):
                 qc.halt = True
             
             # display gate as matrix and truth table
-            title_ = 'Gate ' + self.num + ':\n' + self.gate.notes
+            title_ = 'Gate ' + self.num + ':\n' + self.gate.name
             ops.printout(self.gate, title_ )
             
             # compare state 
@@ -276,7 +276,7 @@ class quantum_circuit:
             if self.halt: break
             print('\n' + '_'*50+ '\n')
             print('Instruction ' + instruct.num + '\n' + '-'*20)
-            print( instruct.gate.notes + ' acting on qudit(s)', instruct.indx)
+            print( instruct.gate.name + ' acting on qudit(s)', instruct.indx)
 
             # a little bit of oop ugliness
             if isinstance(self, mat_quantum_circuit):
@@ -293,7 +293,9 @@ class quantum_circuit:
             print('\nFinal State:')
             self.printout()
         
-    def add_instruct(self, gate, indx):
+    def add_instruct(self, gate, indx=None):
+        if indx == None: indx = list(range(self.length))
+        
         # check validity
         self.validate_instruct(gate, indx)
         
@@ -313,7 +315,7 @@ class quantum_circuit:
                 self.halt = False
                 return
         print(quantum_circuit.error_dividor)
-        print('Invalid instruct')
+        print('Invalid instruct:', gate.name)
         self.halt = True
     
 class mat_quantum_circuit(quantum_circuit):
@@ -355,11 +357,13 @@ class mat_quantum_circuit(quantum_circuit):
             state_locations.append(ops.get_location(self.dims, st))
             self.column[state_locations] = norm
             
-    def add_instruct(self, gate, indx, Print=False):
+    def add_instruct(self, gate, indx=None):
         """
         Creates a matrix equivalent to the (gate + index)
         Calls add_instruct() in the parent function, passing gate, indx and mat
         """
+        if indx == None:
+            indx  = list(range(self.length))
         
         # check validity
         self.validate_instruct(gate, indx)
@@ -501,20 +505,27 @@ def test_idea():
     ctrl = ops.create_control([3,2,2], [0,1], 2, directions)
     flip_branch = qc.add_instruct(ctrl, [0,7,5] )
 
-    qc.run('only_final')
+    qc.run()
     qc.index_aide()
     
 def test_grover():
-    qc = mat_quantum_circuit([4,2], divisions=[1,1], name='Test grover')
-    # qc.special_encoding( {'0':'(FF)', '1':'(FT)', '2':'(TF)', '3':'(TT)'}, 0)
+    qc = mat_quantum_circuit([4,2], divisions=[1,1], name='Test grover', show_amp=True)
+    # qc.special_encoding( {0:'(FF)', 1:'(FT)', 2:'(TF)', 3:'(TT)'}, 0)
     
     had4 = ops.gates('hadamard', 4)
     qc.add_instruct(had4, [0])
     
     AND = ops.AND()
     AND.change_dims([4,2])
-    qc.add_instruct(AND, [0,1])
+    qc.add_instruct(AND)
     
+    # directions = { (1,): ops.gates('flip') }
+    cond_flip = ops.gates('flip')
+    qc.add_instruct(cond_flip, [1])
+    
+    qc.add_instruct(AND)
+    
+    qc.add_instruct(ops.one_shot_grover(),[0])
     qc.run()
     
 # test_diffusion()
