@@ -17,7 +17,7 @@ from math import log
 
 arrow = '\u2192'
 
-def gates(name, dim=2):
+def gates(name, dim=2, reverse=False):
     if name == 'not':
         tt = p_truth_table([2])
         tt.perm_io( 0, 1)
@@ -52,7 +52,10 @@ def gates(name, dim=2):
         # produced hadamard matrix (dim * dim)
         # dim must be a power of two
         exponent = int( log(dim, 2) )
-        h2 = array([[1,1],[1,-1]], object)
+        if reverse is True:
+            h2 = array([[-1,1],[1,1]], object)
+        else:
+            h2 = array([[1,1],[1,-1]], object)
         mat = 1
         for _ in range(exponent):
             mat = kron(mat, h2)
@@ -132,6 +135,7 @@ def maketuple(*args):
         if isinstance(arg, list): result.append(tuple(arg))
         elif isinstance(arg, int): result.append((arg,))
         elif isinstance(arg, ndarray): result.append(tuple(arg))
+        elif isinstance(arg, tuple): result.append(arg)
     
     return tuple(result)
 
@@ -232,8 +236,9 @@ class p_truth_table(truth_table):
         
     def perm_io(self, in_code, out_code):
         in_code, out_code = maketuple(in_code, out_code)
-        self.table[in_code] = out_code
-        self.table[out_code] = in_code
+        if in_code != out_code:
+            self.table[in_code] = out_code
+            self.table[out_code] = in_code
     
     def invert_table(self):
         """"
@@ -245,10 +250,10 @@ class gate:
     def __init__(self, tt, name='A gate'):
         self.tt = tt
         self.table = tt.table
-        self.dims = tt.dims
         self.name = name
         self.size = tt.size
-        self.mat = None
+        self.dims = tt.dims
+        self.mat  = None
     
     def change_dims(self, new_dims):
         """
@@ -307,9 +312,9 @@ class perm_gate(gate):
             for code in rest_encoding:
                 full_in_code = copy.copy(code)
                 full_out_code = copy.copy(code)
-                for j, i in enumerate(indx):
-                    full_in_code.insert(i, in_basis[j])
-                    full_out_code.insert(i, out_basis[j])
+                for jay, i in enumerate(indx):
+                    full_in_code.insert(i, in_basis[jay])
+                    full_out_code.insert(i, out_basis[jay])
                 in_loc = full_encoding.index(full_in_code)
                 out_loc = full_encoding.index(full_out_code)
                 mat[ in_loc, in_loc ] = 0
@@ -461,6 +466,34 @@ class control_gate(gate):
     def matrix_integration(self, circ_dims, indx):
         return self.internal_gate.matrix_integration(circ_dims, indx)
 
+def gate_concat(gate1, gate2):
+    """
+    Combines two gates into larger gate
+    """
+    dims = gate1.dims + gate2.dims
+    l1, l2 = len(gate1.dims), len(gate2.dims)
+    if isinstance(gate1, perm_gate) and isinstance(gate1, perm_gate):
+        tt = p_truth_table(dims)
+    else:
+        tt = d_truth_table(dims)
+    
+    if isinstance(tt, p_truth_table):
+        for code in encode_state(dims, type_='list'):
+            in1, in2 = maketuple(code[:l1], code[-l2:])
+            out1 = gate1.table.get(in1, in1)
+            out2 = gate2.table.get(in2, in2)
+            in_ = in1 + in2
+            out = out1 + out2
+            tt.perm_io( in_, out )
+            
+        gate3 = perm_gate(tt, gate1.name + ' [and] ' + gate2.name)
+        
+    elif isinstance(tt, d_truth_table):
+        # chaos ensues
+        pass
+    
+    return gate3
+    
 def tt2mat(tt):
     """
     Truth table to matrix 
@@ -538,7 +571,7 @@ def fan_out(dim, control, target, Print=False):
     
     return perm_gate(tt, name='Fan out gate')
 
-def arith(dims, control, target, op='add', Print=False):
+def arith(dims, control, target, op='add'):
     """
     This gate adds the controls together and then either performs modular 
     addition or subtract with the target
@@ -555,16 +588,17 @@ def arith(dims, control, target, op='add', Print=False):
             sum_ = sum(in_code[target] + control_sum[i] ) % dims[target]
             out_code = list( in_code )
             out_code[target] = sum_
-            tt.table[in_code] = tuple(out_code)
-        result = perm_gate(tt, mode = 'full' )
+            tt.perm_io( in_code, out_code )
+        result = perm_gate(tt, name = 'Add mod ' + str(dims[control]) )
             
     if op == 'subtract':
         # subtract is the inverse of add
         # consider arith( add ) and then invert the dictionary
         
-        subtract = arith(dims, control, target, mode = 'add', Print=Print)
+        subtract = arith(dims, control, target, mode = 'add')
         subtract_table = subtract.tt.invert_table()
         subtract.tt.table = subtract_table
+        subtract.name = 'Subtract mod ' + str(dims[control])
         result = subtract
         # for i, in_code in enumerate(encoding):
         #     diff_ = sum(in_code[target] - control_sum[i] ) % dims[target]
@@ -572,9 +606,6 @@ def arith(dims, control, target, op='add', Print=False):
         #     out_code[target] = diff_
         #     tt.table[in_code] = tuple(out_code)
         # result = gate(tt, mat_type = 'perm', mode = 'full' )
-    
-    if Print:
-        [ print(key, ':', val) for key, val in tt.table.items() ]
     
     return result
 
@@ -615,7 +646,7 @@ def D(n, m = None):
 
     return result
 
-def goto_state(n, send=1, Print=False):
+def goto_state(n, send=1):
     """
     For equal superpositions of non-0 states in a n-dimensional system,
     this function will create an operator that sends all the amplitude
@@ -639,13 +670,20 @@ def goto_state(n, send=1, Print=False):
     result = identity(n, object)
     result[1:,1:] = mat
     
-    if Print:
-        printout(result, encode_state([n]), name='N=' + str(n) + ' Goto gate')
-    
     tt = mat2tt(result)
     
     name = 'Size ' + str(n) + ', ' + arrow + str(send) + ' Goto-state gate'
     return diff_gate(tt, name)
+
+def swap(dim, state1, state2):
+    """
+    swaps state1 and state2 in a D-dimensional system
+    """
+    tt = p_truth_table([dim])
+    tt.perm_io(state1, state2)
+    
+    name = str(dim) + '-D Swap ' + str(state1) + '-' + str(state2)
+    return perm_gate(tt, name )
 
 def AND(control=[0,1], target=2):
     """
@@ -664,6 +702,25 @@ def AND(control=[0,1], target=2):
     tt.table[out_code] = in_code
     
     return perm_gate(tt, name='AND gate')
+
+def SAME(control=[0,1], target=2):
+    """
+    as AND()
+    """
+    len_ = len(control + [target])
+    dims = array([2]*len_)
+    tt = p_truth_table(dims)
+    out_code = (1,) * len_
+    in_code = list(out_code)
+    in_code[target] = 0
+    tt.perm_io( in_code, out_code)
+    
+    in_code = (0,0,0)
+    out_code = [0,0,0]
+    out_code[target] = 1
+    tt.perm_io( in_code, out_code )
+    
+    return perm_gate(tt, name='SAME gate')
 
 def OR(control=[0,1], target=2):
     """
@@ -686,7 +743,7 @@ def OR(control=[0,1], target=2):
     
     return perm_gate(tt, name='OR gate')
     
-def copy32(control, target):
+def copy32(control=0, target=1):
     """
     This function copies the contents of the |1> |2> qutrit states 
     onto a target qubit
@@ -703,7 +760,7 @@ def copy32(control, target):
     
     return perm_gate(tt, name='Copy 32')
 
-def not32(control, target):
+def not32(control=0, target=1):
     """ 
     Copy32() + NOT gate
     """
@@ -754,7 +811,7 @@ def create_control(dims, control, target, directions):
                 for j, i in enumerate(control):
                     extend_in.insert(i, ctl[j])
                     extend_out.insert(i, ctl[j])
-                    tt.perm_io( extend_in, extend_out )
+                tt.perm_io( extend_in, extend_out )
         
     return control_gate(parent, tt, name)
 
@@ -769,9 +826,8 @@ def one_shot_grover():
 if __name__ == '__main__':
     
     # import q_program
-    # gate = one_shot_grover()
-    # gate.change_dims([2,2])
-    gate = AND()
-    gate.change_dims([4,2])
-    print(gate.apply({(3,0):1}))
-    # printout(gate)
+    g = SAME()
+    # goto_false = swap(3, 0, 1)
+    # dirs2 = { (0,) : goto_false }
+    # ctrl2 = create_control([2,3], 0, 1, dirs2)
+    printout(g)

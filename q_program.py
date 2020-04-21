@@ -13,12 +13,19 @@ import sympy as sp
 from numpy import *
 import matplotlib.pyplot as plt
 import copy
+import collections
 
 null  = '\u2205'
 check = '\u2714'
 
 def indexer(lst, *indices):
     return (lst[i] for i in indices)
+
+def flatten(x):
+    if isinstance(x, collections.Iterable):
+        return [ a for i in x for a in flatten(i) ]
+    else:
+        return [x]
 
 class display_object:
     """
@@ -33,43 +40,54 @@ class instruction:
     This object combines gates with a list of qudits it applies to, all the
     information needed for one quantum gate on the whole circuit
     """
-    def __init__(self, gate, indx, num):
-        self.gate = gate
-        self.indx = indx
+    def __init__(self, num, note, *pairs):
+        self.gate_set = []
+        for gate, indx in pairs:
+            self.gate_set.append( (gate, indx) )
+        
+        self.note = note
         self.num  = str(num)
     
     def integrate(self, state, halt=None):
-        collect = {}
-        for full_basis, amp in state.items():
-            sub_basis = tuple([ full_basis[i] for i in self.indx ])
-            fulls = collect.get(sub_basis, {})
-            fulls[full_basis] = amp
-            collect[ sub_basis ] = fulls
+        """
+        Each instruct object can have, in general, a repetition of a gate to
+        many independent qubits. E.g., all qubits getting a hadamard gate at
+        the same time.
+        """
+        for gate, indx in self.gate_set:
+            collect = {}
+            for full_basis, amp in state.items():
+                sub_basis = tuple([ full_basis[i] for i in indx ])
+                fulls = collect.get(sub_basis, {})
+                fulls[full_basis] = amp
+                collect[ sub_basis ] = fulls
+            
+            # collect is an association between sub-basis extractions and
+            # their full-basis counterparts, each entry is as:
+            # { sub-basis : fulls }
+            # where fulls = { orig_basis_0 : orig_amp_0, 
+            #                 orig_basis_1  : orig_amp_1, ... }
+            
+            # construct new state by iterating through each basis in state
+            # and integrating the result of gate.apply() to each
+            state = {}
+            for sub_basis, fulls in collect.items():
+                # make a dummy call to gate.apply()
+                dummy_out = gate.apply({ sub_basis : 1 })
+                for full_basis, amp in fulls.items():
+                    full_basis = list(full_basis)
+                    for dummy_basis, dummy_amp in dummy_out.items():
+                        for i, jay in zip(indx, range(len(indx))):
+                            full_basis[i] = dummy_basis[jay]
+                        add_to_state = tuple(full_basis)
+                        # add amplitude to value in dict if it exists
+                        present = state.get(add_to_state, 0)
+                        simp = sp.simplify(amp * dummy_amp)
+                        state[add_to_state] =  present + simp
+            # remove zero amps if they exist
+            [ state.pop(basis) for basis, amp in list(state.items()) if amp == 0 ]
         
-        # collect is an association between sub-basis extractions and
-        # their full-basis counterparts, each entry is as:
-        # { sub-basis : fulls }
-        # where fulls = { orig_basis_0 : orig_amp_0, 
-        #                 orig_basis_1  : orig_amp_1, ... }
         
-        # construct new state by iterating through each basis in state
-        # and integrating the result of gate.apply() to each
-        state = {}
-        for sub_basis, fulls in collect.items():
-            # make a dummy call to gate.apply()
-            dummy_out = self.gate.apply({ sub_basis : 1 })
-            for full_basis, amp in fulls.items():
-                full_basis = list(full_basis)
-                for dummy_basis, dummy_amp in dummy_out.items():
-                    for i, jay in zip(self.indx, range(len(self.indx))):
-                        full_basis[i] = dummy_basis[jay]
-                    add_to_state = tuple(full_basis)
-                    # add amplitude to value in dict if it exists
-                    present = state.get(add_to_state, 0)
-                    simp = sp.simplify(amp * dummy_amp)
-                    state[add_to_state] =  present + simp
-        # remove zero amps if they exist
-        [ state.pop(basis) for basis, amp in list(state.items()) if amp == 0 ]
         return state
     
 class mat_instruction(instruction):
@@ -78,8 +96,8 @@ class mat_instruction(instruction):
     The intended use of this class is for human-readably small cases,
     to check if the normal sped-up methods are giving the right answers
     """
-    def __init__(self, gate, indx, num, mat, uni):
-        instruction.__init__(self, gate, indx, num)
+    def __init__(self, num, note, mat, uni, *pairs):
+        instruction.__init__(self, num, note, *pairs)
         self.mat = mat
         self.is_unitary = uni
     
@@ -117,7 +135,7 @@ class mat_instruction(instruction):
             
             
         else:
-            print(error_dividor, 'Non-unitary operation')
+            print(qc.error_dividor, 'Non-unitary operation')
             qc.halt = True
         
 
@@ -141,12 +159,13 @@ class quantum_circuit:
             self.name = r'"A quantum circuit"'
         self.show_amp = show_amp
         self.encodings = []
+        self.instruct_note = None
         
         # calculation attributes
         self.dims = array(dims)
         self.size = prod(dims)
         self.length = len(dims)
-        self.gate_set = []
+        self.instruct_set = []
         self.depth = 0
         self.divisions = list(cumsum(divisions))
         if len(self.divisions) > 1: self.divisions.pop()
@@ -260,11 +279,13 @@ class quantum_circuit:
         
         # Are we really ready to run the circuit?
         if self.halt:
-            print(quantum_circuit.error_dividor, 'Halted')
+            print(quantum_circuit.error_dividor)
+            print('\nHalted')
             return
         
         if self.depth == 0:
-            print(quantum_circuit.error_dividor, 'No operations to apply')
+            print(quantum_circuit.error_dividor)
+            print('\nNo operations to apply')
             return
         
         print(quantum_circuit.dividor)
@@ -272,11 +293,14 @@ class quantum_circuit:
         print('Initial state:')
         self.printout()
         
-        for instruct in self.gate_set:
+        for instruct in self.instruct_set:
             if self.halt: break
             print('\n' + '_'*50+ '\n')
             print('Instruction ' + instruct.num + '\n' + '-'*20)
-            print( instruct.gate.name + ' acting on qudit(s)', instruct.indx)
+            if instruct.note is not None: print('Note: '  + instruct.note)
+            
+            for (gate, indx) in instruct.gate_set:
+                print( gate.name + ' acting on qudit(s)', indx)
 
             # a little bit of oop ugliness
             if isinstance(self, mat_quantum_circuit):
@@ -284,7 +308,7 @@ class quantum_circuit:
                 instruct.integrate(self)
             else:
                 self.state = instruct.integrate(self.state)
-                
+            
             print('\nState ' + instruct.num + ':')
             self.printout()
         
@@ -293,15 +317,37 @@ class quantum_circuit:
             print('\nFinal State:')
             self.printout()
         
-    def add_instruct(self, gate, indx=None):
-        if indx == None: indx = list(range(self.length))
+    def instruct_notes(self, note):
+        """
+        Adds annotations to each operation. self.instruct_note is reset to 
+        None after each add_instruct() call, making the default no none at all
+        """
+        self.instruct_note = note
         
-        # check validity
-        self.validate_instruct(gate, indx)
+    def add_instruct(self, gate, *indx):
+        if self.halt: return
+        
+        # check validity of indices. Are any repeated?
+        if len(flatten(indx)) != len(set(flatten(indx))):
+            print(quantum_circuit.error_dividor)
+            print('Invalid gate copy operation:', gate.name)
+            print(self.instruct_note)
+            self.halt = True
+            return
+        
+        pairs = []
+        for i in indx:
+            # check validity of each gate
+            self.validate_instruct(gate, i)
+            if self.halt: return
+            
+            pairs.append( (gate, i) )
         
         self.depth += 1
-        instruct = instruction(gate, indx, self.depth)
-        self.gate_set.append(instruct)
+        instruct = instruction(self.depth, self.instruct_note, *pairs)
+        self.instruct_note = None
+        
+        self.instruct_set.append(instruct)
         
     def validate_instruct(self, gate, indx):
         """
@@ -309,13 +355,20 @@ class quantum_circuit:
         Return bool determining quantum_circuit.halt
         """
         # too many indices for gate dims?
-        if len(gate.dims) == len(indx):
+        dim_check = ( 'Lengths', len(gate.dims), len(indx) )
+        if dim_check[1] == dim_check[2]:
             # all indices point to gate dims that match the quantum circuit?
-            if all([ self.dims[i] == gate.dims[j] for j, i in enumerate(indx)]):
+            dim_check = [ (self.dims[i], gate.dims[jay])
+                         for jay, i in enumerate(indx)]
+            if all([ a==b for (a,b) in dim_check]):
                 self.halt = False
                 return
+            dim_check.insert(0, 'Relative dimensions')
+        
         print(quantum_circuit.error_dividor)
         print('Invalid instruct:', gate.name)
+        print(self.instruct_note)
+        print(dim_check)
         self.halt = True
     
 class mat_quantum_circuit(quantum_circuit):
@@ -357,28 +410,27 @@ class mat_quantum_circuit(quantum_circuit):
             state_locations.append(ops.get_location(self.dims, st))
             self.column[state_locations] = norm
             
-    def add_instruct(self, gate, indx=None):
+    def add_instruct(self, gate, *indx):
         """
+        *indx is 1 or more tuples the gate applies to
         Creates a matrix equivalent to the (gate + index)
         Calls add_instruct() in the parent function, passing gate, indx and mat
         """
-        if indx == None:
-            indx  = list(range(self.length))
+        super().add_instruct(gate, *indx)
         
-        # check validity
-        self.validate_instruct(gate, indx)
-            
         # do we need matrix integration?
-        if len(indx) == len(self.dims):
+        if len(*indx) == len(self.dims):
             if gate.mat is None: gate.mat = ops.tt2mat(gate.tt)
             mat = gate.mat
         else:
-            mat = gate.matrix_integration(self.dims, indx)
+            # make full truth table for entire circuit and all repeated gates
+            print('THIS IS NOT READY TO RUN YET')
+            mat = new_gate.matrix_integration(self.dims, i)
             
         uni = ops.is_unitary(mat)
-        self.depth += 1
-        instruct = mat_instruction(gate, indx, self.depth, mat, uni)
-        self.gate_set.append(instruct)
+        self.instruct_set[-1].set_matrix(mat, uni)
+        
+        print('Finished loading gate ' + str(self.depth) + ': ' + gate.name)
     
     def col2state(self):
         """
@@ -410,18 +462,32 @@ def test_fan_out():
     qc.add_instruct(instruct)
     qc.run(Print=True, show_amp = True)
 
-def test_diffusion():
-    qc = mat_quantum_circuit([4,4], show_amp=True)
-    qc.write_state('10', '20', '30')
+def test_diffusion(test=2):
+    if test == 1:
+        qc = mat_quantum_circuit([4,4], show_amp=True)
+        qc.write_state('10', '20', '30')
+        
+        gate1 = ops.goto_state(4, send=1)
+        qc.add_instruct(gate1, [0])
+        
+        gate2 = ops.branch(4)
+        qc.add_instruct(gate2, [1])
+        
+        qc.run()
     
-    gate1 = ops.goto_state(4, send=1)
-    qc.add_instruct(gate1, [0])
-    
-    gate2 = ops.branch(4)
-    qc.add_instruct(gate2, [1])
-    
-    qc.run()
-    
+    if test == 2:
+        qc = mat_quantum_circuit([3], show_amp=True)
+        qc.special_encoding('null', 0)
+        
+        b = ops.branch(3)
+        qc.add_instruct(b)
+        
+        gt2 =ops.goto_state(3, 2)
+        qc.add_instruct(gt2)
+        
+        
+        qc.run()
+        
 def test_logic():
     qc = mat_quantum_circuit([3,3,2,2,2], divisions=[2,2,1], name='Test AND')
     
@@ -459,16 +525,22 @@ def test_matrix_check():
     qc.run()
     
 def test_control_ops():
-    qc = mat_quantum_circuit([3,3,2], name='Test control operations', show_amp=True)
-    qc.write_state('110', '120', '210', '220')
+    qc = mat_quantum_circuit([2,2], name='Test control operations', show_amp=True)
+    qc.write_state('00', '10')
     
-    go1 = ops.goto_state(3, send=1)
-    go2 = ops.goto_state(3, send=2)
-    directions = { (1,) : go1, (2,) : go2 }
+    # go1 = ops.goto_state(3, send=1)
+    # go2 = ops.goto_state(3, send=2)
+    # directions = { (0,) : go1, (1,) : go2 }
+    # directions = { (1,1,1) : go1 }
+    # ctl_go = ops.create_control([2,3], 0, 1, directions)
+    # qc.add_instruct(ctl_go, [0,2])
+    qc.add_instruct(ops.gates('not'), [1])
     
-    ctl_go = ops.create_control([3,3], 0, 1, directions)
-    qc.add_instruct(ctl_go, [0,1])
+    directions = { (0,): ops.gates('hadamard'),
+                  (1,) : ops.gates('hadamard', reverse=True) }
     
+    ctrl = ops.create_control([2,2], 1, 0, directions)
+    qc.add_instruct(ctrl)
     qc.run()
     
 def test_idea():
@@ -501,9 +573,10 @@ def test_idea():
     qc.add_instruct( fan, [2, 5] )
     qc.add_instruct(OR, [3, 4, 6] )
     
-    directions = { (2,1): ops.gates('not') }
-    ctrl = ops.create_control([3,2,2], [0,1], 2, directions)
-    flip_branch = qc.add_instruct(ctrl, [0,7,5] )
+    # target |.F>
+    directions = { (1,): ops.gates('not') }
+    ctrl = ops.create_control([2,3], [1], 0, directions)
+    flip_branch = qc.add_instruct(ctrl, [1,5,7] )
 
     qc.run()
     qc.index_aide()
@@ -525,13 +598,91 @@ def test_grover():
     
     qc.add_instruct(AND)
     
-    qc.add_instruct(ops.one_shot_grover(),[0])
+    # qc.add_instruct(ops.one_shot_grover(),[0])
+    # qc.add_instruct(ops.one_shot_grover(),[0])
+    
+    add4 = ops.arith([4], 0, 0)
+    qc.add_instruct(add4, [0])
     qc.run()
+    
+def test_goto():
+    qc = mat_quantum_circuit([3,3,2,2], [2,2], 'Test goto', True)
+    qc.special_encoding('null', 0, 1)
+    qc.write_state('1100', '1200', '2100', '2210')
+    
+    direct1 = { (2,) : ops.gates('not') }
+    tx = ops.create_control([3,2], 0, 1, direct1)
+    direct2 = { (1,) : tx }
+    info_transfer = ops.create_control([3,2,2], 1, [0, 2], direct2)
+    # qc.add_instruct(tx, [0,3])
+    qc.add_instruct(info_transfer, [1,2,3])
+    
+    qc.run()
+    
+def test_idea2():
+    qc = quantum_circuit([3,3,2,2,2,2], [2,2,2], 'Test idea 2', True)
+    qc.special_encoding('null', 0, 1)
+    qc.special_encoding('TF', 2, 3)
+    
+    #1
+    qc.instruct_notes('branch @ 0')
+    qc.add_instruct( ops.branch(3), [0])
+    
+    #2
+    qc.instruct_notes('|null> - |T> swap @ 1')
+    swap = ops.swap(3, 0, 2) 
+    qc.add_instruct( swap, [1])
+    
+    #3
+    qc.instruct_notes('Copy node info to ancillary memory')
+    c32 = ops.copy32()
+    apply_to = (0,2) , (1,3)
+    qc.add_instruct( ops.copy32(), *apply_to )
+    
+    #4
+    qc.instruct_notes('evaluate node @ val')
+    qc.add_instruct( ops.SAME(), [2,3,4])
+    
+    #5
+    qc.instruct_notes('copy val to continue')
+    qc.add_instruct( ops.gates('cnot'), [4,5] )
+    
+    #6
+    qc.instruct_notes('CONTINUE CONTROL: load other node')
+    # double_swap = ops.gate_concat(ops.swap(3, 2, 1), ops.gates('not'))
+    dirs5 = { (0,) : ops.gates('not') }
+    ctrl5 = ops.create_control([2,2], 0, 1, dirs5 )
+    qc.add_instruct( ctrl5, [5,3] )
+    
+    #7
+    qc.instruct_notes('CONTINUE CONTROL: evaluate node')
+    dirs6 = { (0,) : ops.SAME() }
+    ctrl6 = ops.create_control([2,2,2,2], 0, [1,2,3], dirs6)
+    qc.add_instruct( ctrl6, [5,2,3,4])
+    
+    #8
+    qc.instruct_notes('Uncopy continue control')
+    qc.add_instruct( ops.gates('cnot'), [4,5] )
+    
+    #9
+    qc.instruct_notes('PREPARE MERGE: unevaluate')
+    qc.add_instruct( ops.SAME(), [2,3,4] )
+    
+    
+    # qc.instruct_notes('Move amplitudes up one node on the tree')
+    # qc.add_instruct( swap, [1] )
+    
+    # #9
+    # qc.instruct_notes('Unbranch @ 0')
+    # qc.add_instruct( ops.branch(3), [0] )
+    
+    qc.run()
+    qc.index_aide()
     
 # test_diffusion()
 # test_logic()
 # test_matrix_check()
 # test_control_ops()
-# test_idea()
-test_grover()
-
+test_idea2()
+# test_grover()
+# test_goto()
